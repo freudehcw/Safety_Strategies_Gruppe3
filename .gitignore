@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------
+# LaTeX build artifacts
+# ---------------------------------------------------------------
+
+# Core pdflatex output (one .aux per \include'd file)
+*.aux
+*.log
+*.toc
+*.out
+*.lof
+*.lot
+
+# SyncTeX (editor <-> PDF jumping)
+*.synctex.gz
+*.synctex(busy)
+*.synctex.gz(busy)
+
+# latexmk bookkeeping
+*.fls
+*.fdb_latexmk
+*.figlist
+*.makefile
+*.pre
+
+# Bibliography (if natbib/biblatex is enabled later)
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+
+# Index / glossary (if used later)
+*.idx
+*.ind
+*.ilg
+*.glo
+*.gls
+*.glg
+*.acn
+*.acr
+*.alg
+
+# Misc engines / packages
+*.xdv
+*.dvi
+*.ps
+*.nav
+*.snm
+*.vrb
+*.auxlock
+
+# ---------------------------------------------------------------
+# Generated document
+# ---------------------------------------------------------------
+# Only the compiled main document, so PDF figures in images/ stay tracked.
+# Delete this line if you want to commit the PDF for submission.
+/start.pdf
+
+# ---------------------------------------------------------------
+# Editor / OS
+# ---------------------------------------------------------------
+.DS_Store
+._*
+__MACOSX/
+Thumbs.db
+*~
+*.swp
+.vscode/
+.idea/
