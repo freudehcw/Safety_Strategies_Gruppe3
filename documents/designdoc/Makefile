@@ -3,7 +3,7 @@ MAIN = start
 
 all: $(DOCNAME).pdf
 
-$(DOCNAME).pdf: $(MAIN) *.tex
+$(DOCNAME).pdf: $(MAIN).tex *.tex
 	pdflatex -jobname=$(DOCNAME) $(MAIN).tex
 	pdflatex -jobname=$(DOCNAME) $(MAIN).tex
 
