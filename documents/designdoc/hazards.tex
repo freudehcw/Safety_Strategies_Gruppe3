@@ -1,0 +1,147 @@
+\section{Hazard identification}
+\label{chapter4}
+ 
+The only source of physical harm in this system is the rotating actor (rotor).
+The safety function of the demonstrator is: if an object is closer to the rotor
+than the speed-dependent minimum distance, the motor must be switched off.
+The hazards below are therefore all situations in which this safety function is
+lost, is applied too late, or is based on wrong data.
+ 
+\subsection{Identified hazards and countermeasures}
+ 
+	\begin{enumerate}
+		\item \textbf{Hazard 1: Undetected failure of a distance sensor} \\
+			\emph{Cause:} An HC-SR04 delivers no echo at all (broken wiring, defective
+			transducer), returns a permanently frozen value, returns a value outside the
+			specified measuring range, or receives the echo of the second sensor
+			(cross-talk). \\
+			\emph{Effect:} The control unit keeps working with an invalid or outdated
+			distance value and interprets the danger zone as free. The motor is not
+			switched off although a person has already entered the protected area.
+			\\
+			\emph{Countermeasure in software (Raspberry Pi 2):}
+			\begin{itemize}
+				\item Echo timeout monitoring: if no echo edge is received within the
+					maximum expected time, the measurement is marked as invalid. An
+					absent echo is never interpreted as ``no object''.
+				\item Range check: measurements outside the specified measuring range
+					of the sensor are rejected.
+				\item Stuck-value detection: if a sensor reports an unchanged value over
+					a defined number of consecutive cycles, it is treated as faulty.
+				\item Plausibility check between both sensors: if the difference of the
+					two measurements exceeds a defined limit, no trustworthy distance
+					information exists.
+				\item Age check: every distance value carries a timestamp. A value older
+					than one monitoring cycle is discarded and never reused. No distance
+					variable is evaluated before a valid measurement has been written to it.
+				\item Time multiplexing: only one sensor is triggered at a time, so an
+					echo can always be assigned to exactly one sensor.
+				\item Fail-safe reaction: each of the checks above leads to the safe
+					state (motor off). The error state is latched and displayed; the
+					system restarts only after a manual acknowledgement.
+			\end{itemize}
+			Requirement see \ref{req.2}
+		\item \textbf{Hazard 2: Protection zone too small for the actual rotor speed} \\
+			\emph{Cause:} The minimum distance is derived from the speed setpoint that
+			is entered on the host unit and transmitted via Bluetooth. The actual rotor
+			speed can deviate from this value during run-up, under changing load, after
+			a corrupted or outdated transmission, or because the rotor continues to
+			coast down after the motor has been switched off. \\
+			\emph{Effect:} The monitored area is smaller than required for the real
+			speed, or the system reports the safe state while the rotor is still
+			rotating. A person can reach the rotor while it still carries dangerous
+			energy. \\
+			\emph{Countermeasure in software (Raspberry Pi 2):}
+			\begin{itemize}
+				\item The minimum distance is calculated from the measured rotor speed,
+					not from the transmitted setpoint. If no valid speed measurement is
+					available, the maximum speed is assumed as the worst case.
+				\item The minimum distance includes the reaction time of the monitoring
+					cycle and the coast-down time until standstill, not only the
+					geometric distance to the rotor.
+				\item Setpoints received via Bluetooth are accepted only with a valid
+					checksum, within the allowed value range and with a current
+					timestamp. An outdated setpoint is discarded.
+				\item A speed increase is only executed after the correspondingly larger
+					protection zone has been verified as free.
+				\item The safe state is signalled only when the measured speed is zero,
+					not when the switch-off command has been issued.
+			\end{itemize}
+			Requirement see \ref{req.3}
+		\item \textbf{Hazard 3: Loss of cyclic monitoring while the motor is running} \\
+			\emph{Cause:} Software fault on the control unit: endless or blocked loop
+			(for example waiting for an echo that never arrives), deadlock, crash of the
+			control process, or an exceeded cycle time caused by system load. \\
+			\emph{Effect:} The motor keeps its last enable state while the protected
+			area is no longer monitored. The safety function is lost silently, without
+			any visible reaction of the system. \\
+			\emph{Countermeasure in software (Raspberry Pi 2):}
+			\begin{itemize}
+				\item Hardware watchdog that is retriggered only at the end of a
+					completely executed monitoring cycle. An expired watchdog resets the
+					controller; the enable output then defaults to ``off''.
+				\item Dynamic enable signal: the motor driver is enabled by a periodic
+					signal that only a running and complete cycle can generate. A static
+					signal level cannot keep the motor switched on.
+				\item Cycle time monitoring against a defined deadline. A missed
+					deadline leads to the safe state.
+				\item All read operations on sensors and on the communication interface
+					use timeouts. There are no unbounded blocking waits in the safety
+					related path.
+				\item Self-test of the complete safety path at program start (sensor
+					reading, enable output, error indication) before the motor can be
+					started for the first time.
+			\end{itemize}
+			Requirement see \ref{req.1}
+	\end{enumerate}
+ 
+\subsection{Identified hazards without countermeasures }
+ 
+	\begin{enumerate}
+		\item \textbf{Hazard 1: Mechanical failure of the rotor} \\
+			\emph{Cause:} Material fatigue, a loose fastening, imbalance at high speed
+			or a foreign object entering the rotor. \\
+			\emph{Effect:} Parts are ejected with high energy and can cause injuries
+			also outside the monitored area. \\
+			\emph{Reason why no countermeasure is implemented:} The event occurs within
+			milliseconds and cannot be detected by distance sensors. Software can
+			neither prevent it nor reduce its consequences. Only mechanical measures
+			such as an enclosure, a defined mounting torque and a limited maximum speed
+			are effective, and these are outside the software scope of this project. \\
+			\emph{Residual risk:} Accepted and documented. The demonstrator is operated
+			with a limited maximum speed.
+		\item \textbf{Hazard 2: Failure of the motor driver (switch-off command without effect)} \\
+			\emph{Cause:} A welded or short-circuited switching element in the power
+			stage, a defective enable input, or a driver that remains supplied although
+			the control unit commands the switch-off. \\
+			\emph{Effect:} The motor keeps running although the software has correctly
+			detected the hazard and has commanded the shutdown. A single hardware fault
+			bypasses the complete safety function. \\
+			\emph{Reason why no countermeasure is implemented:} The software cannot
+			detect or override a switching element that is stuck in the conducting
+			state. A second, independent shutdown path would be required, for example a
+			safety relay in the supply line with feedback contact monitoring, or a
+			driver with a dedicated safe torque off input. The demonstrator uses a
+			single-channel shutdown path; adding redundant hardware is outside the
+			scope of this project. \\
+			\emph{Residual risk:} Documented single point of failure.
+		\item \textbf{Hazard 3: Physical detection limits of the ultrasonic sensors} \\
+			\emph{Cause:} The HC-SR04 evaluates reflected sound and covers only a narrow
+			detection cone. Objects approaching from the side, from above or from below
+			are outside this cone. Sound absorbing materials such as soft clothing,
+			gloves or foam, and strongly inclined surfaces that deflect the echo,
+			produce no usable reflection. Small objects such as fingers, an approach
+			faster than the measurement cycle, other ultrasonic sources and strong air
+			movement further reduce the detection reliability. \\
+			\emph{Effect:} A person can enter the danger zone without being detected.
+			The motor is not switched off, although the software works correctly. \\
+			\emph{Reason why no countermeasure is implemented:} These are properties of
+			the measuring principle and not software faults. No plausibility check can
+			detect an object that produces no echo at all. A reliable solution would
+			require a certified safety sensor with a defined detection capability and
+			internal self-monitoring, for example a safety laser scanner or a light
+			curtain. The HC-SR04 is a standard component without any safety rating. \\
+			\emph{Residual risk:} The demonstrator shows the functional principle only.
+			It is explicitly not suitable for the protection of persons.
+	\end{enumerate}
+

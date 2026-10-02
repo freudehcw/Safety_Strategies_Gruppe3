@@ -1,0 +1,117 @@
+%----------------------------------------------------------------
+%
+%  File    :  thesis.tex
+%
+%  Authors :  Keith Andrews, IICM, TU Graz, Austria
+%             Manuel Koschuch, FH Campus Wien, Austria
+% 
+%  Created :  22 Feb 96
+% 
+%  Changed :  24 March 2009
+% 
+%----------------------------------------------------------------
+
+% Please send any questions, comments, remarks or complaints to
+% manuel.koschuch@fh-campuswien.ac.at
+
+
+% --- General Setup ---------------------------------------------
+
+%\documentclass[14pt,a4paper,oneside]{extbook} %war 12pt, wieder ändern!!!
+\documentclass[12pt,a4paper,oneside]{article} %11original
+%\usepackage{times}
+
+%\renewcommand{\rmdefault}{phv} % Arial
+%\renewcommand{\sfdefault}{phv} % Arial
+
+\usepackage[utf8]{inputenc}   % so can use Umlaut chars  
+\usepackage[T1]{fontenc}
+\usepackage[bf,sf]{subfigure}
+\renewcommand{\subfigtopskip}{0mm}
+\renewcommand{\subfigcapmargin}{0mm}
+
+\usepackage[english]{babel}         % load babel *before* natbi
+%\usepackage[austrian]  % load babel *before* natbi
+%\usepackage[square]{natbib}                  % citations
+\usepackage{enumitem}
+\usepackage{url}
+
+\usepackage{float}
+
+\usepackage{latexsym}
+
+\usepackage{color}
+
+\usepackage{ifpdf} % detect outputstyle
+
+\usepackage{geometry} % define pagesize in more detail
+
+\usepackage{fancyhdr} % nicer headers and footers
+\usepackage{eurosym}
+\usepackage{url}
+\usepackage{colortbl} %define colored backgrounds for tables
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{fancyhdr}
+\usepackage{multirow}
+\ifpdf
+  \usepackage[pdftex]{graphicx}
+  \DeclareGraphicsExtensions{.pdf,.jpg,.png}
+  \pdfcompresslevel=9
+  \pdfpageheight=297mm
+  \pdfpagewidth=210mm
+\usepackage{fixltx2e}
+  \usepackage[         % hyperref should be last package loaded
+    pdftex,
+    bookmarks,
+    bookmarksnumbered,
+    linktocpage,
+    pagebackref,
+    pdfview={Fit},
+    pdfstartview={Fit},
+    pdfpagemode=UseOutlines,                 % open bookmarks in Acrobat
+  ]{hyperref}
+  \usepackage{bookmark}
+\else                      % latex
+  \usepackage{graphicx}
+\usepackage[T1]{fontenc} 
+{\fontfamily{Schriftart}\selectfont Text}
+\usepackage{color}
+  \DeclareGraphicsExtensions{.ps}
+\fi
+ \usepackage{rotating}
+\newcommand\tabrotate[1]{\begin{turn}{90}\rlap{#1}\small\end{turn}}
+
+\geometry{a4paper,left=24mm,right=24mm, top=30mm, bottom=30mm} %hier waren original 25,35,30,30
+
+\setlength{\parskip}{3pt plus 1pt minus 0pt}       % vert. space before a paragraph
+
+\setcounter{tocdepth}{1}        % lowest section level entered in ToC
+\setcounter{secnumdepth}{2}     % lowest section level still numbered
+
+
+
+
+% --- Start of Document ----------------------------------------
+
+
+\begin{document}
+
+
+\include{title}              % Title Page
+\tableofcontents
+
+%--- Include your chapters here ----------
+
+\include{projectdescription} 
+\include{softwarearchitecture}
+\include{flowchart}
+\include{hazards} 
+\include{threats} 
+\include{requirements} 
+
+
+
+\end{document}
+
+
