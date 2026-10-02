@@ -97,10 +97,22 @@ zusätzlich einzeln auf Gültigkeit und Plausibilität geprüft:
 	\end{verbatim}
 \end{quote}
 
-\paragraph{Vorhandenes Display} Der aktuelle Motorstatus wird am Display angezeigt.
-
 Ein fehlender Messwert, ein Wert außerhalb des spezifizierten Messbereichs oder
 eine zu große Abweichung zwischen beiden Sensoren setzt einen Fehlerzustand.
+
+\begin{center}
+	\begin{tabular}{|c|c|}
+		\hline
+		\textbf{Gültige Sensorwerte} & \textbf{Plausible Sensorwerte} \\
+		\hline
+		2-400cm &  Unter 10cm Unterschied zwischen Sensoren \\
+		\hline
+	\end{tabular}
+\end{center}
+
+\paragraph{Vorhandenes Display} Der aktuelle Motorstatus wird am Display angezeigt.
+
+
 
 \hazfield{Fail-Safe-Reaktion}
 \failsafe{Ungültige oder unplausible Sensordaten $\rightarrow$ Motor AUS}
