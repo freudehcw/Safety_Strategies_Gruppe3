@@ -30,7 +30,7 @@
 \renewcommand{\subfigtopskip}{0mm}
 \renewcommand{\subfigcapmargin}{0mm}
 
-\usepackage[english]{babel}         % load babel *before* natbi
+\usepackage[ngerman]{babel}         % load babel *before* natbi
 %\usepackage[austrian]  % load babel *before* natbi
 %\usepackage[square]{natbib}                  % citations
 \usepackage{enumitem}
@@ -89,7 +89,25 @@
 \setcounter{tocdepth}{1}        % lowest section level entered in ToC
 \setcounter{secnumdepth}{2}     % lowest section level still numbered
 
+% Deutsche Silbentrennung für dieses Kapitel (benötigt ngerman in start.tex)
 
+% --- Hilfsmakros für dieses Kapitel ------------------------------
+% Feldüberschrift innerhalb einer Hazard-Beschreibung
+\providecommand{\hazfield}[1]{%
+	\par\medskip\noindent\textbf{#1}\nopagebreak\par\nobreak\smallskip\noindent\ignorespaces}
+% Gerahmter Hervorhebungskasten
+\providecommand{\keybox}[1]{%
+	\par\smallskip
+	\begin{center}
+		\fbox{\parbox{0.8\textwidth}{\centering\textbf{#1}}}
+\end{center}}
+% Fail-Safe-Reaktion (gleiche Darstellung, eigener Name zur Lesbarkeit)
+\providecommand{\failsafe}[1]{\keybox{#1}}
+% Kompakte Zeile mit HAZOP Guide Words
+\providecommand{\hazop}[1]{%
+	\par\medskip\noindent\textbf{HAZOP Guide Words:}\enspace
+	\textsc{\MakeLowercase{#1}}\par}
+% -----------------------------------------------------------------
 
 
 % --- Start of Document ----------------------------------------

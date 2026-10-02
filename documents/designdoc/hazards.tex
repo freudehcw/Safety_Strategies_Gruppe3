@@ -1,447 +1,372 @@
 \section{Safety Hazards}
 \label{chapter4}
- 
- Im Rahmen des Demonstrators werden sechs zentrale Safety Hazards betrachtet.
- Drei davon werden durch konkrete Maßnahmen im System adressiert.
- Drei weitere Hazards werden bewusst nicht vollständig adressiert, da deren
- vollständige Absicherung den Rahmen des Hochschulprojekts überschreiten würde.
- 
- Der grundsätzlich sichere Zustand des Demonstrators ist:
- 
- \begin{center}
- 	\textbf{Motor AUS / Rotor wird nicht aktiv angetrieben}
- \end{center}
- 
- Dabei ist zu beachten, dass ein Abschalten der Motoransteuerung nicht
- automatisch bedeutet, dass der Rotor sofort mechanisch stillsteht.
- Eine mögliche Nachlaufzeit des Rotors muss daher berücksichtigt werden.
- 
- \subsection{Übersicht}
- 
- \renewcommand{\arraystretch}{1.4}
- 
- \begin{tabularx}{\textwidth}{|c|p{2.7cm}|X|X|}
- 	\hline
- 	\textbf{Nr.} &
- 	\textbf{Status} &
- 	\textbf{Hazard} &
- 	\textbf{Maßnahme / Umgang} \\
- 	\hline
- 	
- 	1 &
- 	Adressiert &
- 	Motor läuft weiter, obwohl sich ein Objekt bereits zu nahe am Rotor befindet. &
- 	Zwei HC-SR04 werden miteinander verglichen. Zusätzlich werden Messwerte auf
- 	Gültigkeit und Plausibilität geprüft. Bei fehlenden, ungültigen oder stark
- 	abweichenden Messwerten wird der Motor abgeschaltet. \\
- 	\hline
- 	
- 	2 &
- 	Adressiert &
- 	Motor arbeitet mit einem falschen oder veralteten Geschwindigkeitsbefehl weiter. &
- 	Die Bluetooth-Kommunikation zwischen Raspberry Pi 1 und Raspberry Pi 2 wird
- 	mit einem Timeout bzw. Heartbeat überwacht. Bei Kommunikationsverlust oder
- 	ungültigen Daten wird der Motor abgeschaltet. \\
- 	\hline
- 	
- 	3 &
- 	Adressiert &
- 	Motor läuft weiter, obwohl nur noch veraltete Sensordaten verfügbar sind. &
- 	Jeder Sensormesswert erhält einen Zeitstempel. Überschreitet das Alter eines
- 	Messwertes einen definierten Grenzwert, wird der Wert nicht mehr verwendet und
- 	der Motor wird abgeschaltet. \\
- 	\hline
- 	
- 	4 &
- 	Nicht vollständig adressiert &
- 	Rotor läuft trotz angefordertem STOP weiter oder kommt nicht rechtzeitig zum Stillstand. &
- 	Die Software kann PWM und Motor-Enable deaktivieren. Ein Defekt der
- 	Leistungselektronik oder ein mechanischer Nachlauf kann dadurch jedoch nicht
- 	vollständig beherrscht werden. \\
- 	\hline
- 	
- 	5 &
- 	Nicht vollständig adressiert &
- 	Der Rotor dreht tatsächlich schneller als vom System angenommen. &
- 	Die reale Motordrehzahl wird nicht durch einen unabhängigen Encoder gemessen.
- 	Der Sicherheitsabstand basiert daher nur auf der vorgegebenen
- 	Geschwindigkeitsstufe bzw. Motoransteuerung. \\
- 	\hline
- 	
- 	6 &
- 	Nicht vollständig adressiert &
- 	Beide HC-SR04 liefern gleichzeitig denselben oder einen ähnlichen falschen Abstandswert. &
- 	Da beide Sensoren dieselbe Sensortechnologie verwenden, können gemeinsame
- 	Fehlerursachen auftreten. Eine reine Plausibilitätsprüfung zwischen beiden
- 	Sensoren kann einen solchen Fehler möglicherweise nicht erkennen. \\
- 	\hline
- 	
- \end{tabularx}
- 
- 
- \subsection{Adressierte Hazards}
- 
- \subsubsection{Hazard 1: Fehlerhafte Abstandsmessung}
- 
- \textbf{Hazard:}
- 
- Der Motor läuft weiter, obwohl sich ein Objekt bereits innerhalb des
- erforderlichen Schutzabstands befindet.
- 
- \textbf{Mögliche Ursache:}
- 
- Ein HC-SR04 liefert einen falschen, insbesondere einen zu großen Abstandswert,
- oder liefert keinen gültigen Messwert.
- 
- \textbf{Gefährliche Situation:}
- 
- Das System geht davon aus, dass sich das Objekt noch in sicherer Entfernung
- befindet, obwohl es sich bereits nahe am rotierenden Aktor befindet.
- 
- \textbf{Mögliche Konsequenz:}
- 
- Eine Person oder ein Gegenstand kann den Rotor erreichen, bevor dieser
- abgeschaltet wird.
- 
- \textbf{Technische Maßnahme:}
- 
- Die Messwerte beider Abstandssensoren werden miteinander verglichen.
- Zusätzlich werden die Werte auf Gültigkeit und Plausibilität geprüft.
- 
- Beispiel:
- 
- \begin{verbatim}
- 	Sensor 1 = 32 cm
- 	Sensor 2 = 35 cm
- 	=> plausibel
- 	
- 	Sensor 1 = 30 cm
- 	Sensor 2 = 150 cm
- 	=> unplausibel
- 	=> Motor AUS
- \end{verbatim}
- 
- Bei einem fehlenden Messwert, einem ungültigen Wert oder einer zu großen
- Abweichung zwischen beiden Sensoren wird ein Fehlerzustand gesetzt.
- 
- \textbf{Fail-Safe-Reaktion:}
- 
- \begin{center}
- 	\textbf{Ungültige oder unplausible Sensordaten $\rightarrow$ Motor AUS}
- \end{center}
- 
- \textbf{Test:}
- 
- Ein Sensor kann während des Betriebs absichtlich verdeckt oder ein falscher
- Messwert über einen Testmodus simuliert werden. Das System muss die
- Abweichung erkennen und den Motor abschalten.
- 
- \textbf{HAZOP Guide Words:}
- 
- \begin{itemize}
- 	\item MORE DISTANCE
- 	\item NO DISTANCE
- 	\item OTHER THAN DISTANCE
- \end{itemize}
- 
- 
- \subsubsection{Hazard 2: Kommunikationsfehler zwischen Raspberry Pi 1 und Raspberry Pi 2}
- 
- \textbf{Hazard:}
- 
- Der Motor arbeitet mit einem falschen oder veralteten Geschwindigkeitsbefehl
- weiter.
- 
- \textbf{Mögliche Ursache:}
- 
- Die Bluetooth-Verbindung fällt aus, Nachrichten gehen verloren, werden
- verspätet übertragen oder enthalten ungültige Daten.
- 
- \textbf{Gefährliche Situation:}
- 
- Raspberry Pi 2 verwendet weiterhin den zuletzt empfangenen Befehl, obwohl
- Raspberry Pi 1 beispielsweise bereits einen STOP-Befehl senden wollte.
- 
- Beispiel:
- 
- \begin{verbatim}
- 	Pi 1 sendet: HIGH
- 	Pi 2 empfaengt: HIGH
- 	Bluetooth-Verbindung faellt aus
- 	
- 	Ohne Timeout:
- 	Motor laeuft weiterhin mit HIGH
- 	
- 	Mit Timeout:
- 	Keine gueltige Nachricht fuer X ms
- 	=> Communication Fault
- 	=> Motor AUS
- \end{verbatim}
- 
- \textbf{Technische Maßnahme:}
- 
- Die Kommunikation wird mit einem Heartbeat bzw. Kommunikations-Timeout
- überwacht. Zusätzlich werden empfangene Nachrichten auf gültige Wertebereiche
- und ein definiertes Nachrichtenformat geprüft.
- 
- \textbf{Fail-Safe-Reaktion:}
- 
- \begin{center}
- 	\textbf{Kommunikationsverlust oder ungültige Daten $\rightarrow$ Motor AUS}
- \end{center}
- 
- \textbf{Test:}
- 
- Die Bluetooth-Verbindung wird während des Motorbetriebs gezielt unterbrochen.
- Der Motor muss nach Ablauf des definierten Kommunikations-Timeouts
- abgeschaltet werden.
- 
- \textbf{HAZOP Guide Words:}
- 
- \begin{itemize}
- 	\item NO COMMUNICATION
- 	\item LATE
- 	\item OTHER THAN
- \end{itemize}
- 
- 
- \subsubsection{Hazard 3: Veraltete Sensordaten}
- 
- \textbf{Hazard:}
- 
- Der Motor läuft weiter, obwohl die Safety-Entscheidung auf veralteten
- Sensordaten basiert.
- 
- \textbf{Mögliche Ursache:}
- 
- Der Sensor-Thread hängt, wird verspätet ausgeführt oder liefert über längere
- Zeit keine neue Messung.
- 
- \textbf{Gefährliche Situation:}
- 
- Ein ursprünglich korrekter Messwert wird weiterhin verwendet, obwohl sich das
- Objekt inzwischen näher zum Rotor bewegt hat.
- 
- Beispiel:
- 
- \begin{verbatim}
- 	Gemessener Abstand = 80 cm
- 	Messwert ist jedoch bereits zu alt
- 	
- 	Objekt befindet sich inzwischen bei 25 cm
- 	
- 	=> alter Messwert darf nicht weiter verwendet werden
- \end{verbatim}
- 
- \textbf{Technische Maßnahme:}
- 
- Jeder Messwert wird gemeinsam mit einem Zeitstempel gespeichert.
- Der Safety-Thread überprüft vor jeder Verwendung, ob der Messwert noch aktuell
- ist.
- 
- Prinzip:
- 
- \begin{verbatim}
- 	if (current_time - measurement_time > MAX_SENSOR_AGE)
- 	{
- 		motor_off();
- 	}
- \end{verbatim}
- 
- \textbf{Fail-Safe-Reaktion:}
- 
- \begin{center}
- 	\textbf{Sensordaten zu alt $\rightarrow$ Motor AUS}
- \end{center}
- 
- \textbf{Test:}
- 
- Der Sensor-Thread wird in einem speziellen Testmodus absichtlich länger als
- das erlaubte maximale Datenalter blockiert. Das System muss erkennen, dass
- die vorhandenen Sensordaten zu alt sind, und den Motor abschalten.
- 
- \textbf{HAZOP Guide Words:}
- 
- \begin{itemize}
- 	\item LATE DISTANCE
- 	\item NO UPDATE
- \end{itemize}
- 
- 
- \subsection{Nicht vollständig adressierte Hazards}
- 
- \subsubsection{Hazard 4: Motor oder Motortreiber reagiert nicht korrekt auf STOP}
- 
- \textbf{Hazard:}
- 
- Der Rotor wird trotz angeforderter Abschaltung weiterhin angetrieben oder
- kommt erst verspätet zum Stillstand.
- 
- \textbf{Mögliche Ursache:}
- 
- Ein Defekt des Motortreibers oder der Leistungselektronik kann dazu führen,
- dass ein korrektes Software-Stoppkommando nicht umgesetzt wird.
- Zusätzlich besitzt der Rotor eine mechanische Trägheit und kann nach dem
- Abschalten weiterlaufen.
- 
- \textbf{Gefährliche Situation:}
- 
- Die Software hat bereits einen sicheren Zustand angefordert, der Rotor stellt
- aber weiterhin eine bewegte Gefahrenquelle dar.
- 
- \textbf{Warum nicht vollständig adressiert:}
- 
- Mit der vorhandenen Architektur kann die Software lediglich ein
- Abschaltsignal an den Motortreiber ausgeben. Eine unabhängige sichere
- Energieabschaltung ist nicht vorhanden.
- 
- Die Nachlaufzeit des Rotors kann experimentell bestimmt und bei der Wahl der
- Schutzabstände berücksichtigt werden. Ein Defekt der Leistungselektronik kann
- dadurch jedoch nicht vollständig beherrscht werden.
- 
- \textbf{Industrielle Lösung:}
- 
- In industriellen Anlagen könnten beispielsweise unabhängige
- sicherheitsgerichtete Abschaltfunktionen, geeignete Safety-Controller,
- Sicherheitsrelais oder eine geeignete Safe-Torque-Off-Funktion verwendet
- werden.
- 
- \textbf{HAZOP Guide Words:}
- 
- \begin{itemize}
- 	\item NO STOP
- 	\item LATE STOP
- \end{itemize}
- 
- 
- \subsubsection{Hazard 5: Tatsächliche Motordrehzahl ist unbekannt}
- 
- \textbf{Hazard:}
- 
- Der Rotor dreht sich tatsächlich schneller als vom Safety-System angenommen.
- 
- \textbf{Mögliche Ursache:}
- 
- Die Schutzabstände werden aus der vorgegebenen Geschwindigkeitsstufe bzw.
- Motoransteuerung abgeleitet. Die tatsächliche Drehzahl wird nicht separat
- gemessen.
- 
- Es darf daher insbesondere nicht angenommen werden:
- 
- \begin{center}
- 	\textbf{50\,\% PWM = 50\,\% der maximalen realen Drehzahl}
- \end{center}
- 
- Die tatsächliche Motordrehzahl kann unter anderem von Motor, Last,
- Versorgungsspannung und Motortreiber abhängen.
- 
- \textbf{Gefährliche Situation:}
- 
- Das System verwendet beispielsweise den Schutzabstand für eine niedrige
- Geschwindigkeitsstufe, obwohl der Rotor tatsächlich schneller läuft.
- Dadurch kann der notwendige Stoppabstand größer sein als angenommen.
- 
- \textbf{Warum nicht vollständig adressiert:}
- 
- Im aktuellen Demonstrator ist kein unabhängiger Drehzahlsensor bzw. Encoder
- vorhanden. Die tatsächliche Motordrehzahl kann daher während des Betriebs
- nicht zuverlässig bestimmt werden.
- 
- \textbf{Maßnahme im Demonstrator:}
- 
- Es werden konservative Schutzabstände für definierte Geschwindigkeitsklassen
- wie LOW, MEDIUM und HIGH verwendet.
- 
- \textbf{Industrielle Lösung:}
- 
- Eine industrielle Umsetzung würde beispielsweise eine unabhängige
- Drehzahlerfassung mit Encoder oder vergleichbarer Sensorik und eine
- sicherheitsgerichtete Auswertung verwenden.
- 
- \textbf{HAZOP Guide Words:}
- 
- \begin{itemize}
- 	\item MORE SPEED
- 	\item OTHER THAN SPEED
- \end{itemize}
- 
- 
- \subsubsection{Hazard 6: Gemeinsamer Fehler beider Abstandssensoren}
- 
- \textbf{Hazard:}
- 
- Beide HC-SR04 liefern gleichzeitig einen ähnlichen, aber falschen
- Abstandswert.
- 
- \textbf{Mögliche Ursache:}
- 
- Beide Sensoren verwenden dasselbe Messprinzip und besitzen daher ähnliche
- Schwächen. Beispiele sind ungünstige Objektwinkel, Reflexionen,
- ungeeignete Oberflächen oder gemeinsame Umgebungsbedingungen.
- 
- Beispiel:
- 
- \begin{verbatim}
- 	Realer Abstand = 25 cm
- 	
- 	Sensor 1 = 100 cm
- 	Sensor 2 = 102 cm
- 	
- 	Sensorvergleich:
- 	100 cm ~ 102 cm
- 	=> Werte erscheinen plausibel
- 	
- 	Tatsaechlich sind jedoch beide Werte falsch.
- \end{verbatim}
- 
- \textbf{Gefährliche Situation:}
- 
- Das System erkennt keinen Widerspruch zwischen den Sensoren und geht
- fälschlicherweise davon aus, dass sich das Objekt außerhalb des
- Gefahrenbereichs befindet.
- 
- \textbf{Warum nicht vollständig adressiert:}
- 
- Eine Plausibilitätsprüfung zwischen zwei gleichen Sensortypen kann nur
- Unterschiede zwischen den Sensoren erkennen. Liefern beide Sensoren aufgrund
- derselben Fehlerursache ähnliche falsche Werte, kann dieser Fehler unentdeckt
- bleiben.
- 
- Die beiden HC-SR04 dürfen daher nicht als vollständig unabhängige
- Safety-Redundanz betrachtet werden.
- 
- \textbf{Industrielle Lösung:}
- 
- In industriellen Anwendungen werden geeignete sicherheitsgerichtete Sensoren
- und je nach Anwendung diversitäre oder zertifizierte Schutzsysteme verwendet.
- 
- \textbf{HAZOP Guide Words:}
- 
- \begin{itemize}
- 	\item MORE DISTANCE
- 	\item OTHER THAN DISTANCE
- \end{itemize}
- 
- 
- \subsection{Zusammenfassung}
- 
- Die im Demonstrator adressierten Hazards sind:
- 
- \begin{enumerate}
- 	\item Fehlerhafte oder unplausible Abstandsmessung
- 	\item Kommunikationsfehler zwischen den Raspberry Pis
- 	\item Veraltete Sensordaten bzw. verzögerte Thread-Ausführung
- \end{enumerate}
- 
- Die bewusst nicht vollständig adressierten Hazards sind:
- 
- \begin{enumerate}
- 	\item Motortreiber oder Motor reagiert nicht korrekt auf ein Stoppsignal
- 	\item Tatsächliche Motordrehzahl weicht von der angenommenen Geschwindigkeit ab
- 	\item Beide HC-SR04 liefern aufgrund einer gemeinsamen Fehlerursache gleichzeitig falsche Werte
- \end{enumerate}
- 
- Damit zeigt der Demonstrator sowohl konkrete Fail-Safe-Mechanismen als auch
- die technischen Grenzen des Systems. Insbesondere wird nicht angenommen,
- dass Raspberry Pi, HC-SR04, Bluetooth oder der verwendete Motortreiber
- Safety-zertifizierte Komponenten darstellen.
+\label{sec:hazards}
+
+Für den Demonstrator wurden sechs Safety Hazards identifiziert. Drei davon
+werden durch Maßnahmen in Software und Systemdesign adressiert. Die übrigen
+drei werden bewusst nur teilweise adressiert, da ihre vollständige Beherrschung
+zusätzliche sicherheitsgerichtete Hardware erfordern würde und damit den Rahmen
+des Projekts überschreitet.
+
+Der sichere Zustand des Demonstrators ist definiert als:
+
+\keybox{Motor AUS -- der Rotor wird nicht aktiv angetrieben}
+
+Das Abschalten der Motoransteuerung bedeutet jedoch nicht, dass der Rotor
+sofort stillsteht. Aufgrund seiner Massenträgheit läuft er nach. Diese
+Nachlaufzeit geht in die Festlegung der Sicherheitsabstände ein.
+
+
+\subsection{Übersicht}
+
+{\renewcommand{\arraystretch}{1.3}\small
+	\begin{tabularx}{\textwidth}{@{}cl>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+		\toprule
+		\textbf{Nr.} & \textbf{Status} & \textbf{Hazard} & \textbf{Maßnahme / Umgang} \\
+		\midrule
+		
+		1 & Adressiert &
+		Zu großer oder fehlender Abstandswert &
+		Quervergleich beider HC-SR04, Gültigkeits- und Plausibilitätsprüfung;
+		andernfalls Motor AUS \\
+		\addlinespace
+		
+		2 & Adressiert &
+		Veralteter oder ungültiger Geschwindigkeitsbefehl &
+		Heartbeat und Timeout auf der Bluetooth-Strecke, Prüfung von Format und
+		Wertebereich; andernfalls Motor AUS \\
+		\addlinespace
+		
+		3 & Adressiert &
+		Safety-Entscheidung auf Basis veralteter Sensordaten &
+		Zeitstempel je Messwert, definiertes maximales Datenalter; andernfalls
+		Motor AUS \\
+		\midrule
+		
+		4 & Teilweise &
+		STOP wird nicht oder zu spät wirksam &
+		Software kann nur PWM und Motor-Enable abschalten; keine unabhängige
+		Energieabschaltung vorhanden \\
+		\addlinespace
+		
+		5 & Teilweise &
+		Reale Drehzahl höher als vom System angenommen &
+		Kein Encoder vorhanden; konservative Sicherheitsabstände je
+		Geschwindigkeitsklasse \\
+		\addlinespace
+		
+		6 & Teilweise &
+		Beide Abstandssensoren gleichzeitig falsch &
+		Gleiches Messprinzip, daher sind Common-Cause-Fehler durch den
+		Quervergleich nicht erkennbar \\
+		\bottomrule
+	\end{tabularx}
+}
+
+
+\subsection{Adressierte Hazards}
+
+\subsubsection{Hazard 1: Fehlerhafte Abstandsmessung}
+\label{haz:1}
+
+\hazfield{Hazard}
+Der Motor läuft weiter, obwohl sich ein Objekt bereits innerhalb des
+erforderlichen Sicherheitsabstands befindet.
+
+\hazfield{Mögliche Ursache}
+Ein HC-SR04 liefert keinen gültigen Messwert oder einen falschen, insbesondere
+einen zu großen Abstandswert.
+
+\hazfield{Gefährliche Situation}
+Das System nimmt an, das Objekt sei noch in sicherer Entfernung, obwohl es sich
+bereits nahe am rotierenden Aktor befindet.
+
+\hazfield{Mögliche Konsequenz}
+Eine Person oder ein Gegenstand erreicht den Rotor, bevor dieser abgeschaltet
+wird.
+
+\hazfield{Technische Maßnahme}
+Die Messwerte beider Abstandssensoren werden miteinander verglichen und
+zusätzlich einzeln auf Gültigkeit und Plausibilität geprüft:
+
+\begin{quote}
+	\begin{verbatim}
+		Sensor 1 =  32 cm        Sensor 1 =  30 cm
+		Sensor 2 =  35 cm        Sensor 2 = 150 cm
+		=> plausibel             => unplausibel => Motor AUS
+	\end{verbatim}
+\end{quote}
+
+Ein fehlender Messwert, ein Wert außerhalb des spezifizierten Messbereichs oder
+eine zu große Abweichung zwischen beiden Sensoren setzt einen Fehlerzustand.
+
+\hazfield{Fail-Safe-Reaktion}
+\failsafe{Ungültige oder unplausible Sensordaten $\rightarrow$ Motor AUS}
+
+\hazfield{Test}
+Ein Sensor wird im Betrieb absichtlich verdeckt, oder ein falscher Messwert
+wird über einen Testmodus eingespeist. Das System muss die Abweichung erkennen
+und den Motor abschalten.
+
+\hazop{MORE DISTANCE, NO DISTANCE, OTHER THAN DISTANCE}
+
+
+\subsubsection{Hazard 2: Kommunikationsfehler zwischen den Raspberry Pis}
+\label{haz:2}
+
+\hazfield{Hazard}
+Der Motor arbeitet mit einem veralteten oder ungültigen Geschwindigkeitsbefehl
+weiter.
+
+\hazfield{Mögliche Ursache}
+Die Bluetooth-Verbindung fällt aus, Nachrichten gehen verloren, treffen
+verspätet ein oder enthalten ungültige Daten.
+
+\hazfield{Gefährliche Situation}
+Raspberry Pi 2 verwendet weiterhin den zuletzt empfangenen Befehl, obwohl
+Raspberry Pi 1 bereits einen STOP-Befehl abgesetzt hat.
+
+\hazfield{Mögliche Konsequenz}
+Der Rotor läuft mit unveränderter Drehzahl weiter, obwohl die Bedieneinheit
+die Abschaltung angefordert hat.
+
+\hazfield{Technische Maßnahme}
+Die Verbindung wird über einen Heartbeat mit Kommunikations-Timeout überwacht.
+Empfangene Nachrichten werden zusätzlich auf ein definiertes Format und
+gültige Wertebereiche geprüft.
+
+\begin{quote}
+	\begin{verbatim}
+		Pi 1 sendet HIGH -> Pi 2 empfaengt HIGH -> Verbindung faellt aus
+		
+		ohne Timeout:  Motor laeuft weiterhin mit HIGH
+		mit Timeout:   keine gueltige Nachricht fuer X ms
+		=> Communication Fault => Motor AUS
+	\end{verbatim}
+\end{quote}
+
+\hazfield{Fail-Safe-Reaktion}
+\failsafe{Kommunikationsverlust oder ungültige Daten $\rightarrow$ Motor AUS}
+
+\hazfield{Test}
+Die Bluetooth-Verbindung wird während des Motorbetriebs gezielt unterbrochen.
+Der Motor muss nach Ablauf des definierten Timeouts abschalten.
+
+\hazop{NO COMMUNICATION, LATE, OTHER THAN}
+
+
+\subsubsection{Hazard 3: Veraltete Sensordaten}
+\label{haz:3}
+
+\hazfield{Hazard}
+Der Motor läuft weiter, obwohl die Safety-Entscheidung auf veralteten
+Sensordaten beruht.
+
+\hazfield{Mögliche Ursache}
+Der Sensor-Thread hängt, wird verspätet ausgeführt oder liefert über längere
+Zeit keine neue Messung.
+
+\hazfield{Gefährliche Situation}
+Ein ursprünglich korrekter Messwert wird weiterverwendet, obwohl sich das
+Objekt inzwischen näher an den Rotor bewegt hat.
+
+\hazfield{Mögliche Konsequenz}
+Das System hält den Gefahrenbereich für frei, während sich das Objekt bereits
+innerhalb des Sicherheitsabstands befindet.
+
+\begin{quote}
+	\begin{verbatim}
+		gespeicherter Abstand = 80 cm   (Messwert bereits zu alt)
+		tatsaechlicher Abstand = 25 cm
+		=> alter Messwert darf nicht weiter verwendet werden
+	\end{verbatim}
+\end{quote}
+
+\hazfield{Technische Maßnahme}
+Jeder Messwert wird gemeinsam mit einem Zeitstempel gespeichert. Der
+Safety-Thread prüft vor jeder Verwendung, ob der Wert noch aktuell ist:
+
+\begin{quote}
+	\begin{verbatim}
+		if ((current_time - measurement_time) > MAX_SENSOR_AGE)
+		{
+			motor_off();
+		}
+	\end{verbatim}
+\end{quote}
+
+\hazfield{Fail-Safe-Reaktion}
+\failsafe{Sensordaten zu alt $\rightarrow$ Motor AUS}
+
+\hazfield{Test}
+Der Sensor-Thread wird in einem Testmodus länger blockiert als das zulässige
+maximale Datenalter. Das System muss die veralteten Daten erkennen und den
+Motor abschalten.
+
+\hazop{LATE DISTANCE, NO UPDATE}
+
+
+\subsection{Nicht vollständig adressierte Hazards}
+
+\subsubsection{Hazard 4: STOP wird nicht oder zu spät wirksam}
+\label{haz:4}
+
+\hazfield{Hazard}
+Der Rotor wird trotz angeforderter Abschaltung weiter angetrieben oder kommt
+erst verspätet zum Stillstand.
+
+\hazfield{Mögliche Ursache}
+Ein Defekt des Motortreibers oder der Leistungselektronik verhindert, dass ein
+korrektes Software-Stoppkommando umgesetzt wird. Unabhängig davon läuft der
+Rotor aufgrund seiner Massenträgheit nach.
+
+\hazfield{Gefährliche Situation}
+Die Software hat den sicheren Zustand bereits angefordert, der Rotor stellt
+aber weiterhin eine bewegte Gefahrenquelle dar.
+
+\hazfield{Mögliche Konsequenz}
+Eine Person greift in der Annahme eines sicheren Zustands in den
+Gefahrenbereich, während der Rotor noch Energie trägt.
+
+\hazfield{Warum nicht vollständig adressiert}
+Mit der vorhandenen Architektur kann die Software lediglich ein Abschaltsignal
+an den Motortreiber ausgeben. Eine davon unabhängige, sicherheitsgerichtete
+Energieabschaltung ist nicht vorhanden. Ein durchlegiertes Schaltelement kann
+weder erkannt noch übersteuert werden.
+
+\hazfield{Maßnahme im Demonstrator}
+Die Nachlaufzeit wird experimentell im ungünstigsten Fall bestimmt und bei der
+Festlegung der Sicherheitsabstände berücksichtigt. Der sichere Zustand wird
+erst nach Ablauf dieser Zeit gemeldet. Der Defektfall der Leistungselektronik
+bleibt davon unberührt.
+
+\hazfield{Industrielle Lösung}
+Unabhängige sicherheitsgerichtete Abschaltpfade, etwa ein Sicherheitsrelais mit
+Rückführkreisüberwachung, ein Safety-Controller oder ein Antrieb mit
+Safe-Torque-Off-Eingang.
+
+\hazfield{Restrisiko}
+Einkanaliger Abschaltpfad als dokumentierter Single Point of Failure.
+
+\hazop{NO STOP, LATE STOP}
+
+
+\subsubsection{Hazard 5: Tatsächliche Motordrehzahl ist unbekannt}
+\label{haz:5}
+
+\hazfield{Hazard}
+Der Rotor dreht tatsächlich schneller, als das Safety-System annimmt.
+
+\hazfield{Mögliche Ursache}
+Die Sicherheitsabstände werden aus der vorgegebenen Geschwindigkeitsstufe
+abgeleitet. Die tatsächliche Drehzahl wird nicht gemessen und hängt unter
+anderem von Motor, Last, Versorgungsspannung und Motortreiber ab. Insbesondere
+gilt nicht:
+
+\keybox{50\,\% PWM $\neq$ 50\,\% der maximalen realen Drehzahl}
+
+\hazfield{Gefährliche Situation}
+Das System verwendet den Sicherheitsabstand einer niedrigen
+Geschwindigkeitsstufe, obwohl der Rotor schneller läuft. Der tatsächlich
+erforderliche Stoppabstand ist größer als der angenommene.
+
+\hazfield{Mögliche Konsequenz}
+Der Motor wird zu spät abgeschaltet, und das Objekt erreicht den Rotor, obwohl
+die Überwachung korrekt arbeitet.
+
+\hazfield{Warum nicht vollständig adressiert}
+Im Demonstrator ist kein unabhängiger Drehzahlsensor vorhanden. Die
+tatsächliche Drehzahl kann während des Betriebs nicht bestimmt und eine
+Annahme damit auch nicht überprüft werden.
+
+\hazfield{Maßnahme im Demonstrator}
+Für die definierten Geschwindigkeitsklassen LOW, MEDIUM und HIGH werden
+konservativ gewählte Sicherheitsabstände verwendet. Eine Erhöhung der
+Geschwindigkeitsstufe erfolgt erst, nachdem der zugehörige größere
+Schutzbereich als frei bewertet wurde.
+
+\hazfield{Industrielle Lösung}
+Unabhängige Drehzahlerfassung über Encoder oder vergleichbare Sensorik mit
+sicherheitsgerichteter Auswertung.
+
+\hazfield{Restrisiko}
+Die Zuordnung von Geschwindigkeitsstufe zu Sicherheitsabstand beruht auf einer
+Annahme, die im Betrieb nicht verifiziert wird.
+
+\hazop{MORE SPEED, OTHER THAN SPEED}
+
+
+\subsubsection{Hazard 6: Gemeinsamer Fehler beider Abstandssensoren}
+\label{haz:6}
+
+\hazfield{Hazard}
+Beide HC-SR04 liefern gleichzeitig einen ähnlichen, aber falschen
+Abstandswert.
+
+\hazfield{Mögliche Ursache}
+Beide Sensoren nutzen dasselbe Messprinzip und haben daher dieselben
+Schwächen, etwa bei ungünstigen Objektwinkeln, schallabsorbierenden
+Oberflächen, Mehrfachreflexionen oder gemeinsamen Umgebungseinflüssen.
+
+\begin{quote}
+	\begin{verbatim}
+		realer Abstand = 25 cm
+		
+		Sensor 1 = 100 cm        Quervergleich: 100 cm ~ 102 cm
+		Sensor 2 = 102 cm        => erscheint plausibel, ist aber falsch
+	\end{verbatim}
+\end{quote}
+
+\hazfield{Gefährliche Situation}
+Das System erkennt keinen Widerspruch zwischen den Sensoren und nimmt an, das
+Objekt befinde sich außerhalb des Gefahrenbereichs.
+
+\hazfield{Mögliche Konsequenz}
+Der Motor bleibt eingeschaltet, obwohl sich ein Objekt bereits innerhalb des
+Sicherheitsabstands befindet.
+
+\hazfield{Warum nicht vollständig adressiert}
+Ein Quervergleich zwischen zwei gleichartigen Sensoren erkennt ausschließlich
+Unterschiede zwischen den Sensoren. Liefern beide aufgrund derselben Ursache
+ähnlich falsche Werte, bleibt der Fehler unentdeckt. Die beiden HC-SR04 dürfen
+daher nicht als unabhängige Redundanz betrachtet werden.
+
+\hazfield{Maßnahme im Demonstrator}
+Die Sensoren werden zeitversetzt getriggert. Damit ist ein gegenseitiges
+Übersprechen ausgeschlossen. Die verbleibende Grenze des Quervergleichs wird
+dokumentiert.
+
+\hazfield{Industrielle Lösung}
+Sicherheitsgerichtete Sensorik und, je nach Anwendung, diversitäre Verfahren
+mit unterschiedlichen Messprinzipien.
+
+\hazfield{Restrisiko}
+Common-Cause-Fehler der Abstandsmessung bleiben unerkannt.
+
+\hazop{MORE DISTANCE, OTHER THAN DISTANCE}
+
+
+\subsection{Zusammenfassung}
+
+Adressiert werden die Hazards \ref{haz:1} bis \ref{haz:3}:
+
+\begin{enumerate}
+	\item fehlerhafte oder unplausible Abstandsmessung,
+	\item Kommunikationsfehler zwischen den Raspberry Pis,
+	\item veraltete Sensordaten durch verzögerte Thread-Ausführung.
+\end{enumerate}
+
+Bewusst nur teilweise adressiert werden die Hazards \ref{haz:4} bis
+\ref{haz:6}:
+
+\begin{enumerate}
+	\item Motortreiber oder Motor reagiert nicht korrekt auf ein Stoppsignal,
+	\item die tatsächliche Drehzahl weicht von der angenommenen ab,
+	\item beide HC-SR04 liefern wegen einer gemeinsamen Ursache zugleich
+	falsche Werte.
+\end{enumerate}
+
+Der Demonstrator zeigt damit sowohl konkrete Fail-Safe-Mechanismen als auch die
+Grenzen des Aufbaus. Raspberry Pi, HC-SR04, Bluetooth und Motortreiber sind
+keine sicherheitszertifizierten Komponenten; der Aufbau ist daher nicht für den
+Personenschutz geeignet.
