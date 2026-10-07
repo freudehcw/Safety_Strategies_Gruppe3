@@ -22,6 +22,38 @@
 	\end{enumerate}
 
 \subsection{Sicherhtsbezogene Anforderungen}
+Bei diesem Projekt tauschen 2 getrennte Systeme Daten aus. Diese Übertragung findet über Bluetooth statt, ein normalerweise unsicheres oder schwer abzusicherndes Übertragungsmedium. Folgende Sicherheits-Primitiva sollen durch diese Implementierung abgesichert werden:
+	\begin{enumerate}[label*=\arabic*.]
+		\item \label{req.1}  Anfoderung: Vertraulichkeit (Confidentiality)\\
+		\\
+		Folge Anfoderungen: \ref{req.1.1} , \ref{req.1.2}
+		\begin{enumerate}[label*=\arabic*.]
+			\item \label{req.1.1}  Anfoderung  \\
+			Beim Programmstart müssen die beiden Systeme neues, gemeinsames Schlüsselmaterial austauschen.\\
+			\item \label{req.1.2} Anfoderung   \\
+			Die initiale Kommunikation sowie die nachfolgende Kommunikation müssen abgesichert sein (Handshake, TLS, hybride Kommunikation).\\
+		\end{enumerate}
+		\item \label{req.2} Anforderung: Integrität (Integrity)\\
+		Durch die kabellose Übertragung oder durch Fremdeinwirkung kann es zur Änderung der Daten kommen, was erkannt werden muss.\\
+		\begin{enumerate}[label*=\arabic*.]
+			\item \label{req.2.1}  Anfoderung  \\
+			Die übertragenen Pakete oder Daten müssen stets auf geänderten Inhalt (Checksums) überprüft werden.\\
+		\end{enumerate}
+		\item \label{req.3} Anforderung: Verfügbarkeit (Availability)\\
+		Die beiden validen Systeme müssen zu jeder Zeit zur (sicheren) gemeinsamen Kommunikation fähig sein.\\
+		\begin{enumerate}[label*=\arabic*.]
+			\item \label{req.3.1}  Anfoderung  \\
+			Die Verschlüsselung und Sicherheitsmechanismen dürfen die Leistung nicht beeinträchtigen.\\
+			\item \label{req.3.2}  Anfoderung  \\
+			Die Latenz darf durch Sicherheitsmechanismen nicht negativ beeinflusst werden.\\
+		\end{enumerate}
+		\item \label{req.4} (Optional?) Anforderung: Authentizität (Authenticity)\\
+		Es muss immer klar sein, von welchem der involvierten Systeme die gesendeten Daten stammen.
+		\begin{enumerate}[label*=\arabic*.]
+			\item \label{req.4.1}  Anfoderung \\
+			Jedes System muss eindeutig durch Schlüsselmaterial identifizierbar sein.\\
+		\end{enumerate}
+	\end{enumerate}
 
 \subsection{Anfoderungen ohne Einfluss auf Sicherheit und Gefahrenlosigkeit}
 
