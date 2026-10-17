@@ -1,33 +1,129 @@
 \section{Softwarearchitektur und Design}
-\label{chapter2}
+\label{sec:software}
 
-\subsection{Softwaremodule}
+Die Software wird in C unter Linux auf beiden Raspberry Pis implementiert.
+Threads werden verwendet, um Sensorerfassung, Kommunikation, Bedienung und
+Safety-Logik voneinander zu trennen. Safety-relevante Entscheidungen werden auf
+Raspberry Pi 2 getroffen; ein Ausfall von LCD oder Logging darf die
+Motorabschaltung nicht verhindern.
 
+\subsection{Raspberry Pi 1 -- Host und Bedienung}
 
-\subsubsection{Safety related modules}
-	\begin{enumerate}
-		\item Modul x: \\
-			Beschreibung:\\
-			Funktionen:\\
-			Daten:\\
-			Anforderungen siehe: \ref{req.1.1}, .... \\
-	\end{enumerate}
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{4.2cm}Y@{}}
+        \toprule
+        \textbf{Modul / Thread} & \textbf{Aufgabe} \\
+        \midrule
+        Initialisierung & Bluetooth, LCD, Logging und benötigte Threads starten \\
+        UI / Eingabe & Geschwindigkeitsstufe \texttt{LOW}, \texttt{MEDIUM}, \texttt{HIGH} auswählen und Programmende anfordern \\
+        Kommunikations-/Heartbeat-Thread & Sollstufe und Heartbeat alle 100 ms senden; Status und Fehlermeldungen von Pi 2 empfangen \\
+        Anzeige & Systemzustand, Abstände, Motorgeschwindigkeit und Fehler am LCD anzeigen \\
+        Logging & Status- und Fehlerereignisse protokollieren; keine Safety-Funktion \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Softwareaufgaben auf Raspberry Pi 1}
+\end{table}
 
+\subsection{Raspberry Pi 2 -- Steuerung und Überwachung}
 
-\subsubsection{Sicherheitsrelevante Module}
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{4.2cm}Y@{}}
+        \toprule
+        \textbf{Modul / Thread} & \textbf{Aufgabe} \\
+        \midrule
+        Initialisierung & Motor sicher deaktivieren, Sensoren, Bluetooth und Threads initialisieren \\
+        Sensor-Thread 1 / 2 & HC-SR04 auslesen und Messwert, Gültigkeitsstatus und Zeitstempel bereitstellen; Sensoren zeitlich versetzt triggern \\
+        Kommunikations-Thread & Nachrichten von Pi 1 empfangen und prüfen; Heartbeat-Timeout überwachen; Status an Pi 1 senden \\
+        Safety-Logik-Thread & Zyklisch alle 50 ms Sensorplausibilität, Kommunikation und Datenaktualität prüfen; Sicherheitsabstand auswählen und Motorfreigabe entscheiden \\
+        Motorsteuerung & Motorstufe setzen oder Motor mit PWM = 0 und Enable = OFF abschalten \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Softwareaufgaben auf Raspberry Pi 2}
+\end{table}
 
-\subsubsection{Module ohne Einfluss auf Sicherheit}
+\subsection{Safety-Logik-Thread}
 
-\subsection{Bibliotheken}
+Der Safety-Logik-Thread ist ein eigener Thread auf Raspberry Pi 2. Er führt
+keine blockierenden Netzwerk- oder Logging-Aufrufe aus. In jedem Zyklus werden
+folgende Prüfungen in dieser Reihenfolge ausgeführt:
 
-Beschreibung der verwendeten Funnktionen und deren Parameter
+\begin{enumerate}
+    \item Sind beide Sensorwerte gültig und zueinander plausibel?
+    \item Ist die Kommunikation aktuell und der empfangene Befehl gültig?
+    \item Sind die verwendeten Sensordaten noch aktuell?
+    \item Welcher Sicherheitsabstand gehört zur gültigen Geschwindigkeitsstufe?
+    \item Liegt der aktuelle Abstand innerhalb des Sicherheitsabstands?
+\end{enumerate}
 
+Schlägt eine der ersten drei Prüfungen fehl, wird ein Fehlerzustand gesetzt und
+die Motoransteuerung deaktiviert. Erst wenn alle Prüfungen erfolgreich sind,
+darf die normale Motorsteuerung ausgeführt werden.
 
-\subsection{Interrupts}
+\subsection{Gemeinsam verwendete Daten}
 
-Definition der Prioritäten
+Sensor- und Kommunikations-Threads aktualisieren Daten, die vom
+Safety-Logik-Thread gelesen werden. Damit keine Race Conditions entstehen,
+werden zusammengehörige Werte als Datensatz behandelt, zum Beispiel:
 
+\begin{verbatim}
+struct sensor_data {
+    float distance_cm;
+    bool valid;
+    struct timespec timestamp;
+};
+\end{verbatim}
 
-\subsection{Pinbelegung}
+Der schreibende Thread aktualisiert den vollständigen Datensatz geschützt durch
+einen Mutex. Der Safety-Logik-Thread kopiert den Datensatz unter demselben Mutex
+in eine lokale Variable und arbeitet anschließend nur mit diesem Snapshot.
+Zeitmessungen für Timeouts und Datenalter sollen mit einer monotonen Uhr erfolgen.
 
+\subsection{Bluetooth-Kommunikation}
 
+Die Kommunikation ist bidirektional. Raspberry Pi 1 sendet Sollstufe,
+Heartbeat, Sequenznummer und gegebenenfalls einen Stop/Shutdown-Befehl.
+Raspberry Pi 2 sendet Status, aktuelle Abstandswerte und Fehlermeldungen zurück.
+
+Nachrichten werden mindestens auf Nachrichtentyp, Länge, Wertebereich und
+Sequenznummer geprüft. Alte, doppelte oder unzulässige Befehle werden nicht als
+gültige Motorfreigabe verwendet. Bleibt eine gültige Nachricht länger als
+300 ms aus, wird die Kommunikation als fehlerhaft bewertet und der Motor
+abgeschaltet.
+
+\subsection{Motorsteuerung}
+
+Die Motorsteuerung erhält ausschließlich eine bereits durch die Safety-Logik
+freigegebene Geschwindigkeitsstufe. Eine unbekannte oder ungültige Stufe führt
+nicht zu einem Default-Betrieb, sondern zu Motor AUS. Der sichere Softwarezustand
+wird durch
+
+\begin{center}
+    \texttt{PWM = 0} und \texttt{Enable = OFF}
+\end{center}
+
+angefordert. Der mechanische Nachlauf des Rotors wird dadurch nicht aufgehoben.
+
+\subsection{Initialisierung und kontrolliertes Beenden}
+
+Beim Start von Raspberry Pi 2 ist die Motoransteuerung deaktiviert. Eine
+Motorfreigabe ist erst erlaubt, wenn Initialisierung, Sensorprüfung und
+Kommunikationsprüfung erfolgreich abgeschlossen wurden.
+
+Fordert der Benutzer auf Raspberry Pi 1 das Programmende an, sendet Pi 1 einen
+Stop/Shutdown-Befehl. Pi 2 setzt zuerst den Motor in den sicheren Zustand,
+beendet danach seine Threads und schließt die Bluetooth-Verbindung. Anschließend
+kann Pi 1 seine eigenen Threads und Ressourcen kontrolliert beenden.
+
+\subsection{Programmierrichtlinien und Versionskontrolle}
+
+Der C-Code soll MISRA-C-Regeln soweit im Projekt praktikabel berücksichtigen.
+Insbesondere werden feste Datentypen, geprüfte Rückgabewerte, definierte
+Wertebereiche, ein \texttt{default}-Zweig in \texttt{switch}-Anweisungen und
+möglichst kurze, klar abgegrenzte Funktionen verwendet. Gemeinsame Konstanten
+wie Timeouts und Grenzwerte werden zentral definiert. Die Entwicklung erfolgt
+mit Git; Änderungen an Safety-relevanter Logik sollen vor dem Merge von einem
+zweiten Gruppenmitglied geprüft werden.

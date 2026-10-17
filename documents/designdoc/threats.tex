@@ -1,19 +1,33 @@
-\section{Bedrohungen}
-\label{chapter3}
+\section{Security-Betrachtung}
+\label{sec:security}
 
-\subsection{Identifizierte Bedrohungen und Gegenmaßnahmen}
+Die Security-Betrachtung konzentriert sich auf die Bluetooth-Kommunikation
+zwischen den beiden Raspberry Pis. Die lokale Abstandsauswertung auf Raspberry
+Pi 2 bleibt auch dann aktiv, wenn die Funkverbindung gestört oder unterbrochen
+wird. Security-Maßnahmen dürfen daher nicht die Fail-Safe-Reaktion verhindern.
 
+\subsection{Relevante Bedrohungen}
 
-	\begin{enumerate}
-		\item Bedrohung 1:
-		\item Bedrohung 2:
-		\item Bedrohung 3:
-	\end{enumerate}
-	
-\subsection{Identifizierte Bedrohungen ohne Gegenmaßnahmen}
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{0.8cm}p{3.5cm}YY@{}}
+        \toprule
+        \textbf{ID} & \textbf{Bedrohung} & \textbf{Mögliche Auswirkung} & \textbf{Maßnahme im Demonstrator} \\
+        \midrule
+        T1 & Unberechtigtes Gerät sendet Befehle & Falsche Geschwindigkeitsstufe oder unerwünschte Bedienung & Bluetooth-Pairing/Bonding; Pi 2 akzeptiert nur den vorgesehenen Kommunikationspartner; Nachrichteninhalt wird geprüft. \\
+        T2 & Alte oder doppelte Nachricht wird erneut verarbeitet & Veralteter Befehl könnte erneut wirksam werden & Sequenznummer je Nachricht; alte und doppelte Nachrichten werden verworfen. \\
+        T3 & Bluetooth wird gestört oder fällt aus & Pi 2 erhält keine aktuellen Befehle mehr & Heartbeat und 300-ms-Timeout; bei Kommunikationsverlust Motor AUS. Verfügbarkeit kann dadurch verloren gehen, Safety bleibt erhalten. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Security-Bedrohungen und Gegenmaßnahmen}
+\end{table}
 
-	\begin{enumerate}
-		\item Bedrohung 1:
-		\item Bedrohung 2:
-		\item Bedrohung 3:
-	\end{enumerate}
+\subsection{Abgrenzung}
+
+Der Demonstrator implementiert kein eigenes kryptographisches Protokoll und
+keinen vollständigen Schutz gegen einen kompromittierten Raspberry Pi oder
+gezieltes Funk-Jamming. Ein Angreifer mit physischem Zugriff auf das Gerät oder
+auf das Betriebssystem liegt außerhalb des Projektumfangs. Entscheidend für das
+Safety-Konzept ist, dass fehlerhafte oder ausbleibende Kommunikation keine
+Motorfreigabe aufrechterhält.

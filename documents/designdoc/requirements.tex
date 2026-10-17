@@ -1,59 +1,77 @@
-\section{Anforderungen}
-\label{chapter4}
+\section{Anforderungen und Tests}
+\label{sec:requirements}
 
+Die Anforderungen sind bewusst auf die für den Demonstrator wesentlichen
+Punkte beschränkt. Zeit- und Grenzwerte sind Design-Startwerte und müssen am
+realen Aufbau verifiziert werden.
 
-\subsection{Anfoderungen bezüglich der Gefahrlosigkeit}
+\subsection{Safety-Anforderungen}
 
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{1.5cm}Yp{2.0cm}@{}}
+        \toprule
+        \textbf{ID} & \textbf{Anforderung} & \textbf{Bezug} \\
+        \midrule
+        SAF-01 & Der sichere Zustand des Systems ist Motor AUS. Auf Pi 2 bedeutet dies PWM = 0 und Enable = OFF. & H1--H6 \\
+        SAF-02 & Pi 2 muss beim Programmstart im sicheren Zustand bleiben, bis Initialisierung, Sensorprüfung und Kommunikation gültig sind. & H1--H3 \\
+        SAF-03 & Beide Abstandssensoren müssen gültige Werte liefern. Eine Abweichung größer 5 cm in zwei aufeinanderfolgenden Messzyklen muss zu Motor AUS führen. & H1 \\
+        SAF-04 & Jeder Sensormesswert muss einen Zeitstempel besitzen. Daten älter als 150 ms dürfen keine Motorfreigabe bewirken. & H3 \\
+        SAF-05 & Pi 1 muss alle 100 ms einen Heartbeat senden. Erhält Pi 2 länger als 300 ms keine gültige Nachricht, muss der Motor abgeschaltet werden. & H2 \\
+        SAF-06 & Der Safety-Logik-Thread auf Pi 2 soll zyklisch alle 50 ms laufen und die Safety-Bedingungen vor einer Motorfreigabe prüfen. & H1--H3 \\
+        SAF-07 & Nur die gültigen Geschwindigkeitsstufen LOW, MEDIUM und HIGH dürfen verwendet werden. Für jede Stufe muss ein definierter Sicherheitsabstand existieren. & H5 \\
+        SAF-08 & Unterschreitet der aktuelle gültige Abstand den Sicherheitsabstand der gewählten Stufe, muss der Motor abgeschaltet werden. & H1, H5 \\
+        SAF-09 & Ein Stop/Shutdown-Befehl muss auf Pi 2 zuerst Motor AUS auslösen. Erst danach dürfen Threads und Programm beendet werden. & H4 \\
+        SAF-10 & Die endgültigen Sicherheitsabstände müssen am realen Aufbau anhand der beobachteten Reaktions- und Nachlaufzeiten festgelegt und dokumentiert werden. & H4, H5 \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Safety-Anforderungen}
+\end{table}
 
+\subsection{Security-Anforderungen}
 
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{1.5cm}Y@{}}
+        \toprule
+        \textbf{ID} & \textbf{Anforderung} \\
+        \midrule
+        SEC-01 & Die Bluetooth-Verbindung soll nur mit dem vorgesehenen, gepaarten bzw. gebondeten Kommunikationspartner aufgebaut werden. \\
+        SEC-02 & Eingehende Nachrichten müssen vor der Verwendung auf Typ, Länge und gültigen Wertebereich geprüft werden. \\
+        SEC-03 & Jede Steuerungsnachricht muss eine Sequenznummer tragen. Alte oder doppelte Nachrichten dürfen nicht erneut ausgeführt werden. \\
+        SEC-04 & Ein Kommunikationsangriff oder Kommunikationsausfall darf die lokale Abstandsauswertung auf Pi 2 nicht deaktivieren; bei Timeout gilt Motor AUS. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Security-Anforderungen}
+\end{table}
 
-	\begin{enumerate}[label*=\arabic*.]
-		\item \label{req.1}  Anfoderung: \\
-		Beim Programmstart müssen alle Funktionen bezüglich der Gefahrlosigkeit getestet werden.  \\
-		Folge Anfoderungen: \ref{req.1.1} , \ref{req.1.2}
-		\begin{enumerate}[label*=\arabic*.]
-			\item \label{req.1.1}  Anfoderung  \\
-			Beim Programmstart muss die Error-LED getestet werden.\ref{req.2}\\
-			\item \label{req.1.2} Anfoderung   \\
-			Beim Programmstart muss das Fehlersenden vom UART getestet werden.\\
-		\end{enumerate}
-		\item \label{req.2} Anforderung:   \\
-		\item \label{req.3} Anforderung:
-	\end{enumerate}
+\subsection{Unterstützende Anforderungen}
 
-\subsection{Sicherheitsbezogene Anforderungen}
-Bei diesem Projekt tauschen 2 getrennte Systeme Daten aus. Diese Übertragung findet über Bluetooth statt, ein normalerweise unsicheres oder schwer abzusicherndes Übertragungsmedium. Folgende Sicherheits-Primitiva sollen durch diese Implementierung abgesichert werden:
-	\begin{enumerate}[label*=\arabic*.]
-		\item \label{req.1}  Anfoderung: Vertraulichkeit (Confidentiality)\\
-		\\
-		Folge Anfoderungen: \ref{req.1.1} , \ref{req.1.2}
-		\begin{enumerate}[label*=\arabic*.]
-			\item \label{req.1.1}  Anfoderung  \\
-			Beim Programmstart müssen die beiden Systeme neues, gemeinsames Schlüsselmaterial austauschen.\\
-			\item \label{req.1.2} Anfoderung   \\
-			Die initiale Kommunikation sowie die nachfolgende Kommunikation müssen abgesichert sein (Handshake, TLS, hybride Kommunikation).\\
-		\end{enumerate}
-		\item \label{req.2} Anforderung: Integrität (Integrity)\\
-		Durch die kabellose Übertragung oder durch Fremdeinwirkung kann es zur Änderung der Daten kommen, was erkannt werden muss.\\
-		\begin{enumerate}[label*=\arabic*.]
-			\item \label{req.2.1}  Anfoderung  \\
-			Die übertragenen Pakete oder Daten müssen stets auf geänderten Inhalt (Checksums) überprüft werden.\\
-		\end{enumerate}
-		\item \label{req.3} Anforderung: Verfügbarkeit (Availability)\\
-		Die beiden validen Systeme müssen zu jeder Zeit zur (sicheren) gemeinsamen Kommunikation fähig sein.\\
-		\begin{enumerate}[label*=\arabic*.]
-			\item \label{req.3.1}  Anfoderung  \\
-			Die Verschlüsselung und Sicherheitsmechanismen dürfen die Leistung nicht beeinträchtigen.\\
-			\item \label{req.3.2}  Anfoderung  \\
-			Die Latenz darf durch Sicherheitsmechanismen nicht negativ beeinflusst werden.\\
-		\end{enumerate}
-		\item \label{req.4} (Optional?) Anforderung: Authentizität (Authenticity)\\
-		Es muss immer klar sein, von welchem der involvierten Systeme die gesendeten Daten stammen.
-		\begin{enumerate}[label*=\arabic*.]
-			\item \label{req.4.1}  Anfoderung \\
-			Jedes System muss eindeutig durch Schlüsselmaterial identifizierbar sein.\\
-		\end{enumerate}
-	\end{enumerate}
+\begin{itemize}
+    \item Das LCD zeigt Systemzustand, Abstände, Geschwindigkeitsstufe und Fehler an. Das LCD ist keine Safety-Funktion.
+    \item Logging protokolliert wichtige Zustands- und Fehlerereignisse. Logging ist keine Risikominderung und darf den Safety-Logik-Thread nicht blockieren.
+    \item Gemeinsame Daten zwischen Threads müssen konsistent übertragen werden, beispielsweise über Mutex und Snapshot-Kopie.
+    \item Änderungen an Safety-relevanter Software werden über Git versioniert und sollen vor dem Merge überprüft werden.
+\end{itemize}
 
-\subsection{Anfoderungen ohne Einfluss auf Sicherheit und Gefahrenlosigkeit}
+\subsection{Geplante Tests}
 
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{1.5cm}YY@{}}
+        \toprule
+        \textbf{Test} & \textbf{Durchführung} & \textbf{Erwartetes Ergebnis} \\
+        \midrule
+        TC-01 & Einen Sensor verdecken oder ungültigen Messwert erzeugen. & Sensorfehler wird erkannt; Motor AUS. \\
+        TC-02 & Zwei Sensorwerte um mehr als 5 cm abweichen lassen. & Nach zwei aufeinanderfolgenden unplausiblen Messzyklen Motor AUS. \\
+        TC-03 & Bluetooth-Verbindung während des Motorbetriebs trennen oder Pi 1 anhalten. & Spätestens nach 300 ms ohne gültige Nachricht wird die Motorfreigabe entzogen. \\
+        TC-04 & Sensor-Thread länger als 150 ms blockieren. & Daten werden als veraltet erkannt; Motor AUS. \\
+        TC-05 & Testobjekt in den Sicherheitsabstand der jeweiligen Geschwindigkeitsstufe bewegen. & Motor wird abgeschaltet, sobald der gültige Abstand kleiner als der konfigurierte Sicherheitsabstand ist. \\
+        TC-06 & Programmende auf Pi 1 auslösen. & Pi 1 sendet Stop/Shutdown; Pi 2 setzt zuerst Motor AUS und beide Programme beenden kontrolliert. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Geplante System- und Safety-Tests}
+\end{table}

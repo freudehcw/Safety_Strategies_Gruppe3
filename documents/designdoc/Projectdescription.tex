@@ -1,15 +1,95 @@
 \section{Projektbeschreibung}
-\label{chapter1}
+\label{sec:project}
 
-\subsection{Projektbeschreibung}
+\subsection{Ziel und Systemidee}
 
-\begin{figure}[ht]
-	\includegraphics[width=0.5\textwidth]{images/system.png}
-	\centering
-	\caption{system description}
-	\label{fig:system}
-\end{figure}
+Ziel des Projekts ist ein Demonstrator für ein geschwindigkeitsabhängiges
+Schutzsystem eines rotierenden Aktors. Das Prinzip orientiert sich vereinfacht
+an \emph{Speed and Separation Monitoring} (SSM): Mit steigender
+Geschwindigkeitsstufe wird ein größerer Sicherheitsabstand verwendet.
+Unterschreitet ein Objekt diesen Abstand, wird die Motoransteuerung abgeschaltet.
 
-Wenn ein anderes Bild eingefügt werden soll, dieses einfach in den images Ordner kopieren und den Namen in der Pfadangabe ändern,
+Der Demonstrator dient ausschließlich zur Untersuchung eines
+sicherheitsgerichteten Prinzips. Er ist kein zertifiziertes Safety-System.
+Insbesondere werden Raspberry Pi 4B, HC-SR04, Bluetooth und der verwendete
+Motortreiber nicht als Safety-zertifizierte Komponenten betrachtet.
 
+\keybox{Sicherer Zustand: Motor AUS -- der Rotor wird nicht aktiv angetrieben.}
 
+Ein Software-Stopp bedeutet nicht automatisch mechanischen Stillstand. Der Rotor
+kann aufgrund seiner Massenträgheit nachlaufen. Diese Nachlaufzeit muss bei der
+Festlegung der Sicherheitsabstände berücksichtigt werden.
+
+\subsection{Systemaufbau}
+
+Das System besteht aus zwei Raspberry Pi 4B, zwei Ultraschall-Abstandssensoren
+HC-SR04, einem Elektromotor mit Rotor, einem Motortreiber, einem LCD-Display und
+einer Bluetooth-Verbindung zwischen den Raspberry Pis.
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{3.7cm}YY@{}}
+        \toprule
+        \textbf{Komponente} & \textbf{Aufgabe} & \textbf{Bedeutung für Safety} \\
+        \midrule
+        Raspberry Pi 1 & Bedienung, Auswahl der Geschwindigkeitsstufe, LCD-Anzeige, Logging und Bluetooth-Kommunikation & Liefert Sollwerte und zeigt Zustände an. LCD und Logging sind keine Safety-Funktionen. \\
+        Raspberry Pi 2 & Sensorerfassung, Plausibilitätsprüfung, Safety-Logik und Motorsteuerung & Führt die lokale Safety-Entscheidung aus und kann den Motor unabhängig von Pi 1 abschalten. \\
+        2 $\times$ HC-SR04 & Abstandsmessung zum Gefahrenbereich & Zwei gleiche Sensoren ermöglichen einen Quervergleich, bilden aber keine nachgewiesene Safety-Redundanz. \\
+        Motortreiber / Motor & Umsetzung der Motoransteuerung und rotierende Gefahrenquelle & Motor AUS entspricht PWM = 0 und deaktiviertem Enable-Signal. Mechanischer Stillstand ist dadurch nicht garantiert. \\
+        Bluetooth & Bidirektionale Kommunikation zwischen Pi 1 und Pi 2 & Wird mit Heartbeat, Timeout und Plausibilitätsprüfungen überwacht. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Komponenten und Aufgaben des Demonstrators}
+\end{table}
+
+\subsection{Funktionsablauf}
+
+Nach dem Start initialisieren beide Raspberry Pis ihre benötigten Schnittstellen
+und Threads. Raspberry Pi 2 hält die Motoransteuerung während der
+Initialisierung im sicheren Zustand. Erst wenn gültige Sensordaten, eine gültige
+Kommunikation und eine gültige Geschwindigkeitsstufe vorliegen, darf der Motor
+freigegeben werden.
+
+Raspberry Pi 1 sendet die gewünschte Geschwindigkeitsstufe
+\texttt{LOW}, \texttt{MEDIUM} oder \texttt{HIGH} sowie einen Heartbeat an
+Raspberry Pi 2. Raspberry Pi 2 liest beide Abstandssensoren aus, prüft die
+Messwerte und wählt den zugehörigen Sicherheitsabstand. Befindet sich ein Objekt
+innerhalb dieses Abstands oder schlägt eine Safety-Prüfung fehl, wird der Motor
+abgeschaltet.
+
+Raspberry Pi 2 sendet Status, Abstandswerte und Fehlermeldungen an Raspberry Pi
+1 zurück. Diese Informationen werden am LCD angezeigt und können protokolliert
+werden.
+
+\subsection{Zentrale Designparameter}
+
+Die folgenden Werte sind Projektparameter für den Demonstrator und müssen am
+realen Aufbau getestet und gegebenenfalls angepasst werden.
+
+\begin{table}[H]
+    \centering
+    \begin{tabularx}{\textwidth}{@{}p{5.1cm}p{3.2cm}Y@{}}
+        \toprule
+        \textbf{Parameter} & \textbf{Startwert} & \textbf{Bedeutung} \\
+        \midrule
+        Heartbeat Pi 1 $\rightarrow$ Pi 2 & 100 ms (10 Hz) & Zyklische Lebensmeldung und Übertragung der Sollstufe \\
+        Kommunikations-Timeout & 300 ms & Keine gültige Nachricht innerhalb dieses Zeitraums führt zu Motor AUS \\
+        Safety-Logik-Zyklus & 50 ms & Zyklische Prüfung der Safety-Bedingungen auf Pi 2 \\
+        Max. Alter der Sensordaten & 150 ms & Ältere Messwerte dürfen nicht für eine Freigabe verwendet werden \\
+        Sensorabweichung & $> 5$ cm in zwei aufeinanderfolgenden Messzyklen & Sensorwerte werden als unplausibel bewertet \\
+        Sicherheitsabstände & $S_{\mathrm{LOW}} < S_{\mathrm{MEDIUM}} < S_{\mathrm{HIGH}}$ & Endgültige Werte werden am Demonstrator anhand von Reaktions- und Nachlaufzeit festgelegt \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Zentrale Startwerte des Designs}
+\end{table}
+
+\subsection{Grenzen des Demonstrators}
+
+Die tatsächliche Motordrehzahl wird nicht mit einem Encoder gemessen. Daher darf
+nicht angenommen werden, dass ein PWM-Wert proportional zur realen Drehzahl ist.
+Die Geschwindigkeitsstufen stellen lediglich definierte Ansteuerungsklassen dar.
+Außerdem können zwei gleiche HC-SR04 durch eine gemeinsame Fehlerursache
+ähnliche falsche Werte liefern. Ein Defekt des Motortreibers, bei dem der Motor
+trotz Abschaltsignal weiter bestromt wird, kann mit der vorhandenen Architektur
+nicht sicher beherrscht werden.

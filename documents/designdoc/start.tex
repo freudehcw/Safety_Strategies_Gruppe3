@@ -1,135 +1,63 @@
-%----------------------------------------------------------------
-%
-%  File    :  thesis.tex
-%
-%  Authors :  Keith Andrews, IICM, TU Graz, Austria
-%             Manuel Koschuch, FH Campus Wien, Austria
-% 
-%  Created :  22 Feb 96
-% 
-%  Changed :  24 March 2009
-% 
-%----------------------------------------------------------------
+\documentclass[12pt,a4paper,oneside]{article}
 
-% Please send any questions, comments, remarks or complaints to
-% manuel.koschuch@fh-campuswien.ac.at
-
-
-% --- General Setup ---------------------------------------------
-
-%\documentclass[14pt,a4paper,oneside]{extbook} %war 12pt, wieder ändern!!!
-\documentclass[12pt,a4paper,oneside]{article} %11original
-%\usepackage{times}
-
-%\renewcommand{\rmdefault}{phv} % Arial
-%\renewcommand{\sfdefault}{phv} % Arial
-
-\usepackage[utf8]{inputenc}   % so can use Umlaut chars  
+\usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage[bf,sf]{subfigure}
-\renewcommand{\subfigtopskip}{0mm}
-\renewcommand{\subfigcapmargin}{0mm}
-
-\usepackage[ngerman]{babel}         % load babel *before* natbi
-%\usepackage[austrian]  % load babel *before* natbi
-%\usepackage[square]{natbib}                  % citations
-\usepackage{enumitem}
-\usepackage{url}
-
+\usepackage[ngerman]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
 \usepackage{float}
-
-\usepackage{latexsym}
-
-\usepackage{color}
-
-\usepackage{ifpdf} % detect outputstyle
-
-\usepackage{geometry} % define pagesize in more detail
-
-\usepackage{fancyhdr} % nicer headers and footers
-\usepackage{eurosym}
-\usepackage{url}
-\usepackage{colortbl} %define colored backgrounds for tables
 \usepackage{booktabs}
 \usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
 \usepackage{fancyhdr}
-\usepackage{multirow}
-\ifpdf
-  \usepackage[pdftex]{graphicx}
-  \DeclareGraphicsExtensions{.pdf,.jpg,.png}
-  \pdfcompresslevel=9
-  \pdfpageheight=297mm
-  \pdfpagewidth=210mm
-\usepackage{fixltx2e}
-  \usepackage[         % hyperref should be last package loaded
-    pdftex,
-    bookmarks,
-    bookmarksnumbered,
-    linktocpage,
-    pagebackref,
-    pdfview={Fit},
-    pdfstartview={Fit},
-    pdfpagemode=UseOutlines,                 % open bookmarks in Acrobat
-  ]{hyperref}
-  \usepackage{bookmark}
-\else                      % latex
-  \usepackage{graphicx}
-\usepackage[T1]{fontenc} 
-{\fontfamily{Schriftart}\selectfont Text}
-\usepackage{color}
-  \DeclareGraphicsExtensions{.ps}
-\fi
- \usepackage{rotating}
-\newcommand\tabrotate[1]{\begin{turn}{90}\rlap{#1}\small\end{turn}}
+\usepackage{hyperref}
 
-\geometry{a4paper,left=24mm,right=24mm, top=30mm, bottom=30mm} %hier waren original 25,35,30,30
+\geometry{left=24mm,right=24mm,top=25mm,bottom=25mm}
+\graphicspath{{images/}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\emergencystretch=2em
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{2}
 
-\setlength{\parskip}{3pt plus 1pt minus 0pt}       % vert. space before a paragraph
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    pdftitle={Design-Dokument SSM-Demonstrator},
+    pdfauthor={Gruppe 3}
+}
 
-\setcounter{tocdepth}{1}        % lowest section level entered in ToC
-\setcounter{secnumdepth}{2}     % lowest section level still numbered
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Design-Dokument -- SSM-Demonstrator}
+\rhead{Gruppe 3}
+\cfoot{\thepage}
+\setlength{\headheight}{15pt}
 
-% Deutsche Silbentrennung für dieses Kapitel (benötigt ngerman in start.tex)
-
-% --- Hilfsmakros für dieses Kapitel ------------------------------
-% Feldüberschrift innerhalb einer Hazard-Beschreibung
-\providecommand{\hazfield}[1]{%
-	\par\medskip\noindent\textbf{#1}\nopagebreak\par\nobreak\smallskip\noindent\ignorespaces}
-% Gerahmter Hervorhebungskasten
-\providecommand{\keybox}[1]{%
-	\par\smallskip
-	\begin{center}
-		\fbox{\parbox{0.8\textwidth}{\centering\textbf{#1}}}
-\end{center}}
-% Fail-Safe-Reaktion (gleiche Darstellung, eigener Name zur Lesbarkeit)
-\providecommand{\failsafe}[1]{\keybox{#1}}
-% Kompakte Zeile mit HAZOP Guide Words
-\providecommand{\hazop}[1]{%
-	\par\medskip\noindent\textbf{HAZOP Guide Words:}\enspace
-	\textsc{\MakeLowercase{#1}}\par}
-% -----------------------------------------------------------------
-
-
-% --- Start of Document ----------------------------------------
-
+% Hilfsmakros
+\newcommand{\keybox}[1]{%
+    \begin{center}
+        \fbox{\parbox{0.86\textwidth}{\centering\textbf{#1}}}
+    \end{center}}
+\newcommand{\hazfield}[1]{\par\medskip\noindent\textbf{#1:}\enspace}
+\newcommand{\failsafe}[1]{\keybox{#1}}
+\newcommand{\hazop}[1]{\par\smallskip\noindent\textbf{HAZOP Guide Words:} #1\par}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 
 \begin{document}
 
-
-\include{title}              % Title Page
+\input{title}
 \tableofcontents
+\newpage
 
-%--- Include your chapters here ----------
-
-\include{Projectdescription}
-\include{softwarearchitecture}
-\include{flowchart}
-\include{hazards} 
-\include{threats} 
-\include{requirements} 
-
-
+\input{Projectdescription}
+\input{softwarearchitecture}
+\input{flowchart}
+\input{hazards}
+\input{threats}
+\input{requirements}
 
 \end{document}
-
-
