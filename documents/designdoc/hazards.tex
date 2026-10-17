@@ -58,8 +58,6 @@ Einen Sensor verdecken, gezielt einen abweichenden Messwert erzeugen oder per
 Testmodus einspeisen. Der Fehler muss erkannt werden und der Motor muss
 abschalten.
 
-\hazop{MORE DISTANCE, NO DISTANCE, OTHER THAN DISTANCE}
-
 \subsubsection{H2 -- Kommunikationsfehler zwischen Raspberry Pi 1 und Raspberry Pi 2}
 \label{haz:h2}
 
@@ -84,8 +82,6 @@ Während des Motorbetriebs die Bluetooth-Verbindung trennen oder das Pi-1-Progra
 anhalten. Spätestens nach dem definierten Timeout muss Pi 2 den Motor
 abschalten.
 
-\hazop{NO COMMUNICATION, LATE, OTHER THAN}
-
 \subsubsection{H3 -- Veraltete Sensordaten}
 \label{haz:h3}
 
@@ -108,8 +104,6 @@ gelten als ungültig und dürfen keine Motorfreigabe bewirken.
 \hazfield{Test}
 Einen Sensor-Thread im Testmodus länger als 150 ms blockieren. Der Safety-Thread
 muss den veralteten Messwert erkennen und den Motor abschalten.
-
-\hazop{LATE DISTANCE, NO UPDATE}
 
 \subsection{Nicht vollständig adressierte Hazards}
 
@@ -136,8 +130,6 @@ Aufbau gemessen und bei der Wahl der Sicherheitsabstände berücksichtigt.
 Unabhängige sicherheitsgerichtete Abschaltung, beispielsweise geeigneter
 Safety-Controller, Sicherheitsrelais oder ein Antrieb mit Safe-Torque-Off.
 
-\hazop{NO STOP, LATE STOP}
-
 \subsubsection{H5 -- Tatsächliche Motordrehzahl ist unbekannt}
 \label{haz:h5}
 
@@ -160,8 +152,6 @@ Sicherheitsabstand verwendet.
 
 \hazfield{Industrielle Lösung}
 Unabhängige Drehzahlerfassung mit sicherheitsgerichteter Auswertung.
-
-\hazop{MORE SPEED, OTHER THAN SPEED}
 
 \subsubsection{H6 -- Gemeinsamer Fehler beider Abstandssensoren}
 \label{haz:h6}
@@ -187,5 +177,3 @@ Quervergleichs wird ausdrücklich dokumentiert.
 \hazfield{Industrielle Lösung}
 Geeignete sicherheitsgerichtete Sensorik und je nach Anwendung diversitäre
 Messprinzipien.
-
-\hazop{MORE DISTANCE, OTHER THAN DISTANCE}
