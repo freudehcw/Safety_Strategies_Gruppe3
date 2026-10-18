@@ -44,7 +44,7 @@ Plattformmaßnahmen (z.\,B. Secure Boot, diversitäre Sensorik) erforderlich wä
 
 \textbf{Bedrohung (Integrität \& Authentizität):} Ein fremdes Gerät baut eine
 Verbindung zu Raspberry Pi~2 auf und sendet Steuerbefehle, oder lauscht
-Befehle ab (Verlust der Vertraulichkeit).
+Befehle ab.
 
 \textbf{Angriffsweg:} Ein Angreifer umgeht die standardmäßigen
 Bluetooth-Sicherheitsmechanismen (z.\,B. durch MAC-Spoofing oder Schwachstellen
@@ -75,7 +75,7 @@ wird abgefangen und später erneut gesendet.
 
 \textbf{Angriffsweg:} Der Angreifer belauscht den Funkverkehr. Ohne den
 AES-Schlüssel zu kennen, sendet er eine exakte Kopie einer alten
-"Motor HIGH"-Nachricht zu einem späteren Zeitpunkt, um den Motor ungewollt
+\textit{Motor HIGH}-Nachricht zu einem späteren Zeitpunkt, um den Motor ungewollt
 wieder zu starten.
 
 \textbf{Erkennung und Maßnahme:} Jede Steuerungsnachricht von Pi~1 trägt eine
@@ -137,7 +137,7 @@ Willen des menschlichen Bedieners entspricht.
 der Laufzeitumgebung auf Pi~1 und keine unabhängige Bestätigung direkt auf Pi~2.
 
 \textbf{Maßnahme im Demonstrator:} Die Abstandsüberwachung läuft völlig
-autonom auf Pi~2. Auch bei einem kompromittierten "HIGH"-Befehl schaltet Pi~2
+autonom auf Pi~2. Auch bei einem kompromittierten \textit{HIGH}-Befehl schaltet Pi~2
 den Motor ab, sobald der Sensor ein Hindernis erkennt.
 
 \textbf{Industrielle Lösung:} Gehärtetes Betriebssystem (RTOS), Ausführung in
