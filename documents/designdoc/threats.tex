@@ -6,8 +6,11 @@ Die Security-Betrachtung konzentriert sich auf die Bluetooth-Kommunikation
 zwischen den beiden Raspberry Pis. Die lokale Abstandsauswertung auf Raspberry
 Pi 2 bleibt auch dann aktiv, wenn die Funkverbindung gestört oder unterbrochen
 wird. Security-Maßnahmen dürfen daher nicht die Fail-Safe-Reaktion verhindern.
+Drei Bedrohungen werden durch konkrete Maßnahmen im Design adressiert. Drei
+weitere werden bewusst nicht vollständig adressiert, weil dafür zusätzliche
+Hardware- oder Plattformmaßnahmen erforderlich wären.
 
-\subsection{Relevante Bedrohungen}
+\subsection{Übersicht}
 
 \begin{table}[H]
     \centering
@@ -19,12 +22,171 @@ wird. Security-Maßnahmen dürfen daher nicht die Fail-Safe-Reaktion verhindern.
         T1 & Unberechtigtes Gerät sendet Befehle & Falsche Geschwindigkeitsstufe oder unerwünschte Bedienung & Bluetooth-Pairing/Bonding; Pi 2 akzeptiert nur den vorgesehenen Kommunikationspartner; Nachrichteninhalt wird geprüft. \\
         T2 & Alte oder doppelte Nachricht wird erneut verarbeitet & Veralteter Befehl könnte erneut wirksam werden & Sequenznummer je Nachricht; alte und doppelte Nachrichten werden verworfen. \\
         T3 & Bluetooth wird gestört oder fällt aus & Pi 2 erhält keine aktuellen Befehle mehr & Heartbeat und 300-ms-Timeout; bei Kommunikationsverlust Motor AUS. Verfügbarkeit kann dadurch verloren gehen, Safety bleibt erhalten. \\
+        \midrule
+        T4 & Kompromittierter Raspberry Pi 1 sendet formal gültige, aber manipulierte Befehle & Unerwünschte Geschwindigkeitsstufe, falsche Statusanzeige für den Bediener & \textit{Nicht vollständig adressiert.} Pi 2 entscheidet lokal über die Abschaltung; der Sicherheitsabstand gilt für jede Stufe. \\
+        T5 & Manipulation von Software oder Konfiguration auf Pi 2 & Grenzwerte, Timeouts oder Sicherheitsabstände werden verändert oder die Safety-Logik deaktiviert & \textit{Nicht vollständig adressiert.} Konstanten zentral definiert und über Git versioniert; kein Schutz am laufenden Gerät. \\
+        T6 & Akustische Störung oder Spoofing der HC-SR04 & Beide Sensoren liefern gleichzeitig falsche Abstände & \textit{Nicht vollständig adressiert.} Plausibilitätsprüfung und zeitversetztes Triggern; gleichartige Manipulation beider Sensoren wird nicht sicher erkannt. \\
         \bottomrule
     \end{tabularx}
     \caption{Security-Bedrohungen und Gegenmaßnahmen}
+    \label{tab:security-threats}
 \end{table}
 
+\subsection{Adressierte Bedrohungen}
+
+\subsubsection*{T1 -- Unberechtigtes Gerät sendet Befehle}
+
+\textbf{Bedrohung:} Ein fremdes Bluetooth-Gerät baut eine Verbindung zu
+Raspberry Pi 2 auf und sendet Steuerbefehle.
+
+\textbf{Angriffsweg:} Ein Angreifer in Funkreichweite gibt sich als
+Kommunikationspartner aus oder sendet selbst erzeugte Nachrichten mit
+unzulässigem Inhalt.
+
+\textbf{Erkennung und Maßnahme:} Pi 2 akzeptiert nur Verbindungen des
+gepaarten bzw.\ gebondeten Raspberry Pi 1. Jede eingehende Nachricht wird vor
+der Verwendung auf Nachrichtentyp, Länge und gültigen Wertebereich geprüft.
+Nur die Stufen LOW, MEDIUM und HIGH werden als Befehl akzeptiert; unbekannte
+Werte führen nicht zu einem Default-Betrieb.
+
+\textbf{Reaktion:}
+\begin{center}
+    Unbekannter Absender oder ungültiger Nachrichteninhalt $\rightarrow$ Nachricht verwerfen, keine Motorfreigabe
+\end{center}
+
+\textbf{Test:} Verbindungsversuch mit einem nicht gepaarten Gerät durchführen
+sowie im Testmodus Nachrichten mit falschem Typ, falscher Länge oder
+unzulässiger Stufe einspeisen. Die Verbindung bzw.\ Nachricht muss abgelehnt
+werden; der Motorzustand darf sich dadurch nicht ändern.
+
+\subsubsection*{T2 -- Wiedereinspielen alter oder doppelter Nachrichten}
+
+\textbf{Bedrohung:} Eine zuvor gültige Nachricht wird erneut verarbeitet und
+ein veralteter Befehl wird dadurch wieder wirksam.
+
+\textbf{Angriffsweg:} Aufgezeichnete Nachrichten werden erneut gesendet
+(Replay), oder Nachrichten treffen durch Übertragungsfehler doppelt bzw.\ in
+falscher Reihenfolge ein.
+
+\textbf{Erkennung und Maßnahme:} Jede Steuerungsnachricht von Pi 1 trägt eine
+fortlaufende Sequenznummer. Pi 2 speichert die zuletzt akzeptierte
+Sequenznummer und verwirft Nachrichten mit gleicher oder älterer Nummer. Eine
+verworfene Nachricht gilt nicht als gültiger Heartbeat und kann den
+300-ms-Timeout daher nicht zurücksetzen.
+
+\textbf{Reaktion:}
+\begin{center}
+    Alte oder doppelte Sequenznummer $\rightarrow$ Nachricht verwerfen; bleibt eine gültige Nachricht aus $\rightarrow$ Motor AUS
+\end{center}
+
+\textbf{Test:} Im Testmodus eine bereits verarbeitete Nachricht erneut senden
+und Nachrichten mit veralteter Sequenznummer einspeisen. Die Nachrichten
+dürfen keinen Befehl auslösen; bei ausschließlich veralteten Nachrichten muss
+der Motor nach spätestens 300\,ms abschalten.
+
+\subsubsection*{T3 -- Störung oder Ausfall der Bluetooth-Verbindung}
+
+\textbf{Bedrohung:} Raspberry Pi 2 erhält keine aktuellen Befehle mehr und
+könnte mit einem veralteten Befehl weiterarbeiten.
+
+\textbf{Angriffsweg:} Gezielte Funkstörung (Jamming), Unterbrechung der
+Verbindung oder Ausfall von Pi 1.
+
+\textbf{Erkennung und Maßnahme:} Pi 1 sendet alle 100\,ms einen Heartbeat mit
+dem aktuellen Befehl. Pi 2 überwacht mit einer monotonen Uhr den Zeitpunkt der
+letzten gültigen Nachricht. Trifft länger als 300\,ms keine gültige Nachricht
+ein, wird ein Kommunikationsfehler gesetzt. Die lokale Abstandsauswertung auf
+Pi 2 bleibt dabei unabhängig von der Funkverbindung aktiv.
+
+\textbf{Reaktion:}
+\begin{center}
+    Kein gültiger Heartbeat innerhalb von 300\,ms $\rightarrow$ Motor AUS
+\end{center}
+
+Der Angriff kann damit die Verfügbarkeit des Demonstrators beeinträchtigen,
+führt aber nicht zu einem unsicheren Zustand.
+
+\textbf{Test:} Während des Motorbetriebs die Bluetooth-Verbindung trennen oder
+das Programm auf Pi 1 anhalten (vgl.\ TC-03). Spätestens nach 300\,ms muss Pi 2
+den Motor abschalten.
+
+\subsection{Nicht vollständig adressierte Bedrohungen}
+
+\subsubsection*{T4 -- Kompromittierter Raspberry Pi 1}
+
+\textbf{Bedrohung:} Ein Angreifer erlangt Kontrolle über Raspberry Pi 1 und
+sendet Nachrichten, die Typ-, Längen-, Wertebereichs- und Sequenzprüfung
+bestehen, inhaltlich aber nicht dem Willen des Bedieners entsprechen.
+
+\textbf{Warum relevant:} Pairing/Bonding und Sequenznummern stellen nur sicher,
+dass eine Nachricht vom vorgesehenen Gerät stammt. Sie sagen nichts darüber
+aus, ob dieses Gerät vertrauenswürdig arbeitet. Zusätzlich kann ein
+manipulierter Pi 1 dem Bediener am LCD einen falschen Systemzustand anzeigen.
+
+\textbf{Warum nicht vollständig adressiert:} Es gibt keine Integritätsprüfung
+der Software auf Pi 1 und keine unabhängige Bedienerbestätigung auf Pi 2.
+
+\textbf{Maßnahme im Demonstrator:} Die Abstandsüberwachung läuft lokal auf
+Pi 2 und kann durch Befehle von Pi 1 nicht deaktiviert werden. Auch bei
+manipulierter Stufe gilt der zugehörige Sicherheitsabstand. Die Auswirkung
+beschränkt sich damit im Wesentlichen auf Verfügbarkeit und
+Bedienerinformation.
+
+\textbf{Industrielle Lösung:} Secure Boot, gehärtetes Betriebssystem,
+Ende-zu-Ende-authentifizierte Nachrichten sowie eine unabhängige Statusanzeige
+bzw.\ ein Not-Halt direkt an der Maschine.
+
+\subsubsection*{T5 -- Manipulation von Software oder Konfiguration auf Raspberry Pi 2}
+
+\textbf{Bedrohung:} Durch physischen Zugriff, beispielsweise durch Austausch
+der SD-Karte, oder durch Zugriff auf das Betriebssystem werden Programm oder
+Parameter von Pi 2 verändert.
+
+\textbf{Warum relevant:} Pi 2 trägt die gesamte Safety-Entscheidung. Eine
+Änderung der Sicherheitsabstände, des 300-ms-Timeouts oder der
+Plausibilitätsgrenze hebelt die Maßnahmen gegen H1--H3 direkt aus, ohne dass
+dies von außen erkennbar ist.
+
+\textbf{Warum nicht vollständig adressiert:} Der Raspberry Pi 4B besitzt im
+Projektaufbau keine verifizierte Boot-Kette und keinen Schutz der
+Speichermedien. Ein Angreifer mit physischem Zugriff liegt außerhalb des
+Projektumfangs (siehe Abschnitt~\ref{subsec:security-abgrenzung}).
+
+\textbf{Maßnahme im Demonstrator:} Safety-relevante Konstanten sind zentral
+definiert, Änderungen werden über Git versioniert und vor dem Merge geprüft.
+Damit ist der Soll-Stand nachvollziehbar; der Ist-Stand am Gerät wird jedoch
+nicht überprüft.
+
+\textbf{Industrielle Lösung:} Secure Boot mit signierter Firmware,
+schreibgeschützte bzw.\ verschlüsselte Parameter, Zugriffsschutz am Gehäuse
+und Prüfsummen über Safety-Parameter beim Start.
+
+\subsubsection*{T6 -- Akustische Störung oder Spoofing der Ultraschallsensoren}
+
+\textbf{Bedrohung:} Ein Angreifer stört die HC-SR04 gezielt mit Ultraschall
+im Bereich von 40\,kHz oder erzeugt künstliche Echos.
+
+\textbf{Warum relevant:} Beide Sensoren arbeiten mit demselben Messprinzip und
+derselben Frequenz. Eine externe Quelle kann daher beide gleichzeitig
+beeinflussen. Je nach Angriff entstehen zu kleine Messwerte (unnötiges
+Abschalten, Verlust der Verfügbarkeit) oder Messwerte, die ein tatsächlich
+nahes Objekt verdecken.
+
+\textbf{Warum nicht vollständig adressiert:} Der Quervergleich erkennt nur
+Unterschiede zwischen den Sensoren. Werden beide gleichartig manipuliert,
+besteht die Plausibilitätsprüfung. Es handelt sich um einen vorsätzlich
+herbeigeführten Common-Cause-Fehler (vgl.\ H6).
+
+\textbf{Maßnahme im Demonstrator:} Zeitversetztes Triggern, Gültigkeits- und
+Plausibilitätsprüfung sowie Verwendung des kleineren Messwerts. Die
+Einschränkung wird ausdrücklich dokumentiert.
+
+\textbf{Industrielle Lösung:} Diversitäre Sensorik, beispielsweise Ultraschall
+kombiniert mit Lichtvorhang oder Safety-Laserscanner, codierte Messsignale und
+physische Schutzeinrichtungen.
+
 \subsection{Abgrenzung}
+\label{subsec:security-abgrenzung}
 
 Der Demonstrator implementiert kein eigenes kryptographisches Protokoll und
 keinen vollständigen Schutz gegen einen kompromittierten Raspberry Pi oder
