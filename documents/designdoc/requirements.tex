@@ -17,10 +17,10 @@ realen Aufbau verifiziert werden.
         \midrule
         SAF-01 & Der sichere Zustand des Systems ist Motor AUS. Auf Pi 2 bedeutet dies PWM = 0 und Enable = OFF. & H1--H6 \\
         SAF-02 & Pi 2 muss beim Programmstart im sicheren Zustand bleiben, bis Initialisierung, Sensorprüfung und Kommunikation gültig sind. & H1--H3 \\
-        SAF-03 & Beide Abstandssensoren müssen gültige Werte liefern. Eine Abweichung größer 5 cm in zwei aufeinanderfolgenden Messzyklen muss zu Motor AUS führen. & H1 \\
-        SAF-04 & Jeder Sensormesswert muss einen Zeitstempel besitzen. Daten älter als 150 ms dürfen keine Motorfreigabe bewirken. & H3 \\
-        SAF-05 & Pi 1 muss alle 100 ms einen Heartbeat senden. Erhält Pi 2 länger als 300 ms keine gültige Nachricht, muss der Motor abgeschaltet werden. & H2 \\
-        SAF-06 & Der Safety-Logik-Thread auf Pi 2 soll zyklisch alle 50 ms laufen und die Safety-Bedingungen vor einer Motorfreigabe prüfen. & H1--H3 \\
+        SAF-03 & Beide Abstandssensoren müssen gültige Werte liefern. Eine Abweichung größer 5\,cm in zwei aufeinanderfolgenden Messzyklen muss zu Motor AUS führen. & H1 \\
+        SAF-04 & Jeder Sensormesswert muss einen Zeitstempel besitzen. Daten älter als 150\,ms dürfen keine Motorfreigabe bewirken. & H3 \\
+        SAF-05 & Pi 1 muss alle 100\,ms einen Heartbeat senden. Erhält Pi 2 länger als 300\,ms keine gültige Nachricht, muss der Motor abgeschaltet werden. & H2 \\
+        SAF-06 & Der Safety-Logik-Thread auf Pi 2 soll zyklisch alle 50\,ms laufen und die Safety-Bedingungen vor einer Motorfreigabe prüfen. & H1--H3 \\
         SAF-07 & Nur die gültigen Geschwindigkeitsstufen LOW, MEDIUM und HIGH dürfen verwendet werden. Für jede Stufe muss ein definierter Sicherheitsabstand existieren. & H5 \\
         SAF-08 & Unterschreitet der aktuelle gültige Abstand den Sicherheitsabstand der gewählten Stufe, muss der Motor abgeschaltet werden. & H1, H5 \\
         SAF-09 & Ein Stop/Shutdown-Befehl muss auf Pi 2 zuerst Motor AUS auslösen. Erst danach dürfen Threads und Programm beendet werden. & H4 \\
@@ -39,10 +39,10 @@ realen Aufbau verifiziert werden.
         \toprule
         \textbf{ID} & \textbf{Anforderung} \\
         \midrule
-        SEC-01 & Die Bluetooth-Verbindung soll nur mit dem vorgesehenen, gepaarten bzw. gebondeten Kommunikationspartner aufgebaut werden. \\
-        SEC-02 & Eingehende Nachrichten müssen vor der Verwendung auf Typ, Länge und gültigen Wertebereich geprüft werden. \\
-        SEC-03 & Jede Steuerungsnachricht muss eine Sequenznummer tragen. Alte oder doppelte Nachrichten dürfen nicht erneut ausgeführt werden. \\
-        SEC-04 & Ein Kommunikationsangriff oder Kommunikationsausfall darf die lokale Abstandsauswertung auf Pi 2 nicht deaktivieren; bei Timeout gilt Motor AUS. \\
+        SEC-01 & \textbf{Vertraulichkeit \& Authentizität:} Die Kommunikation muss auf Applikationsebene kryptografisch abgesichert sein (z.\,B. AES-GCM), um unberechtigtes Mitlesen und Spoofing zu verhindern. \\
+        SEC-02 & \textbf{Integrität:} Eingehende Nachrichten müssen vor der Verwendung zwingend kryptografisch verifiziert (z.\,B. Prüfung des Auth-Tags) und anschließend auf korrekten Typ, Länge und gültigen Wertebereich geprüft werden. \\
+        SEC-03 & \textbf{Replay-Schutz:} Jede Steuerungsnachricht muss eine Sequenznummer tragen, die kryptografisch an den Payload gebunden ist (z.\,B. als AAD). Alte oder doppelte Nachrichten dürfen nicht akzeptiert werden. \\
+        SEC-04 & \textbf{Verfügbarkeit vs. Safety:} Ein Kommunikationsangriff (z.\,B. Jamming) oder Verbindungsausfall darf die lokale Abstandsauswertung auf Pi 2 nicht deaktivieren; bei einem Timeout (siehe SAF-05) geht das System in den sicheren Zustand über (Motor AUS). \\
         \bottomrule
     \end{tabularx}
     \caption{Security-Anforderungen}
@@ -67,12 +67,15 @@ realen Aufbau verifiziert werden.
         \textbf{Test} & \textbf{Durchführung} & \textbf{Erwartetes Ergebnis} \\
         \midrule
         TC-01 & Einen Sensor verdecken oder ungültigen Messwert erzeugen. & Sensorfehler wird erkannt; Motor AUS. \\
-        TC-02 & Zwei Sensorwerte um mehr als 5 cm abweichen lassen. & Nach zwei aufeinanderfolgenden unplausiblen Messzyklen Motor AUS. \\
-        TC-03 & Bluetooth-Verbindung während des Motorbetriebs trennen oder Pi 1 anhalten. & Spätestens nach 300 ms ohne gültige Nachricht wird die Motorfreigabe entzogen. \\
-        TC-04 & Sensor-Thread länger als 150 ms blockieren. & Daten werden als veraltet erkannt; Motor AUS. \\
+        TC-02 & Zwei Sensorwerte um mehr als 5\,cm abweichen lassen. & Nach zwei aufeinanderfolgenden unplausiblen Messzyklen Motor AUS. \\
+        TC-03 & Bluetooth-Verbindung während des Motorbetriebs trennen oder Pi 1 anhalten. & Spätestens nach 300\,ms ohne gültige Nachricht wird die Motorfreigabe entzogen. \\
+        TC-04 & Sensor-Thread länger als 150\,ms blockieren. & Daten werden als veraltet erkannt; Motor AUS. \\
         TC-05 & Testobjekt in den Sicherheitsabstand der jeweiligen Geschwindigkeitsstufe bewegen. & Motor wird abgeschaltet, sobald der gültige Abstand kleiner als der konfigurierte Sicherheitsabstand ist. \\
         TC-06 & Programmende auf Pi 1 auslösen. & Pi 1 sendet Stop/Shutdown; Pi 2 setzt zuerst Motor AUS und beide Programme beenden kontrolliert. \\
+        \midrule
+        TC-07 \newline \textit{(Security)} & \textbf{Spoofing-Test:} Eine Nachricht mit ungültigem kryptografischen Auth-Tag oder manipuliertem Payload einspeisen. & Die Nachricht wird auf Applikationsebene verworfen. Der Systemzustand bleibt unverändert. \\
+        TC-08 \newline \textit{(Security)} & \textbf{Replay-Test:} Eine exakte, gültig verschlüsselte Kopie einer älteren Nachricht (veraltete Sequenznummer) erneut einspeisen. & Die Nachricht wird aufgrund der Sequenznummern-Prüfung verworfen. Motor schaltet nach Timeout ab (falls kein neuer Heartbeat folgt). \\
         \bottomrule
     \end{tabularx}
-    \caption{Geplante System- und Safety-Tests}
+    \caption{Geplante System-, Safety- und Security-Tests}
 \end{table}
