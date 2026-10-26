@@ -64,39 +64,6 @@ Schlägt eine der ersten drei Prüfungen fehl, wird ein Fehlerzustand gesetzt un
 die Motoransteuerung deaktiviert. Erst wenn alle Prüfungen erfolgreich sind,
 darf die normale Motorsteuerung ausgeführt werden.
 
-\subsection{Plausibilitätsprüfung der Sensorwerte}
-\label{sec:plausibility}
-
-Die Abweichung der beiden Sensoren ist nicht die einzige Prüfung. Ein
-Sensorwert wird nur verwendet, wenn er alle folgenden Prüfungen besteht. Die
-Prüfungen P1 und P2 betreffen jeden Sensor einzeln und werden im jeweiligen
-Sensor-Thread durchgeführt; das Ergebnis wird als Gültigkeitsstatus im
-Datensatz abgelegt. P3 und P4 vergleichen bzw.\ bewerten die Daten und werden im
-Safety-Logik-Thread durchgeführt.
-
-\begin{table}[H]
-    \centering
-    \small
-    \begin{tabularx}{\textwidth}{@{}p{0.7cm}p{3.1cm}Yp{2.3cm}@{}}
-        \toprule
-        \textbf{ID} & \textbf{Prüfung} & \textbf{Bedingung für „ungültig“} & \textbf{Ort} \\
-        \midrule
-        P1 & Messbereich & $d < 2$ cm oder $d > 400$ cm (Grenzen des HC-SR04). Ein fehlendes Echo führt zu einem Wert außerhalb des Messbereichs und wird dadurch ebenfalls erkannt. & Sensor-Thread \\
-        P2 & Abstandsänderung & $\frac{|d_k - d_{k-1}|}{t_k - t_{k-1}} > 0{,}2$ cm/ms, also eine Änderung schneller als 2 m/s zwischen zwei Messungen desselben Sensors. & Sensor-Thread \\
-        P3 & Quervergleich & $|d_1 - d_2| > 5$ cm in zwei aufeinanderfolgenden Messzyklen. & Safety-Logik \\
-        P4 & Datenalter & Messwert älter als 150 ms. & Safety-Logik \\
-        \bottomrule
-    \end{tabularx}
-    \caption{Plausibilitätsprüfungen der Abstandssensoren}
-\end{table}
-
-Die Grenze von 2 m/s in P2 liegt über der Annäherungsgeschwindigkeit von
-1{,}6 m/s, die in der EN ISO 13855 für Körperbewegungen angesetzt wird, und
-filtert vor allem Ausreißer und Sprünge des Messwerts. Taucht ein Objekt
-seitlich im Messbereich auf, kann der Messwert ebenfalls sprunghaft kleiner
-werden und P2 auslösen. Die Reaktion darauf ist in beiden Fällen Motor AUS und
-liegt damit auf der sicheren Seite.
-
 \subsection{Verwendete Abstände}
 \label{sec:distances}
 
@@ -121,6 +88,39 @@ Aufgaben:
 
 Am LCD wird nur $d_{\min}$ angezeigt. $d_1$ und $d_2$ werden einzeln
 protokolliert, damit Abweichungen zwischen den Sensoren nachvollziehbar sind.
+
+\subsection{Plausibilitätsprüfung der Sensorwerte}
+\label{sec:plausibility}
+
+Die Abweichung der beiden Sensoren ist nicht die einzige Prüfung. Ein
+Sensorwert wird nur verwendet, wenn er alle folgenden Prüfungen besteht. Die
+Prüfungen P1 und P2 betreffen jeden Sensor einzeln und werden im jeweiligen
+Sensor-Thread durchgeführt. Das Ergebnis wird als Gültigkeitsstatus im
+Datensatz abgelegt. P3 und P4 vergleichen bzw. bewerten die Daten und werden im
+Safety-Logik-Thread durchgeführt.
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{0.7cm}p{3.1cm}Yp{2.3cm}@{}}
+        \toprule
+        \textbf{ID} & \textbf{Prüfung} & \textbf{Bedingung für „ungültig“} & \textbf{Ort} \\
+        \midrule
+        P1 & Messbereich & $d < 2$ cm oder $d > 400$ cm (Grenzen des HC-SR04). Ein fehlendes Echo führt zu einem Wert außerhalb des Messbereichs und wird dadurch ebenfalls erkannt. & Sensor-Thread \\
+        P2 & Abstandsänderung & $\frac{|d_k - d_{k-1}|}{t_k - t_{k-1}} > 0{,}2$ cm/ms, also eine Änderung schneller als 2 m/s zwischen zwei Messungen desselben Sensors. & Sensor-Thread \\
+        P3 & Quervergleich & $|d_1 - d_2| > 5$ cm in zwei aufeinanderfolgenden Messzyklen. & Safety-Logik \\
+        P4 & Datenalter & Messwert älter als 150 ms. & Safety-Logik \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Plausibilitätsprüfungen der Abstandssensoren}
+\end{table}
+
+Die Grenze von 2 m/s in P2 liegt über der Annäherungsgeschwindigkeit von
+1{,}6 m/s, die in der EN ISO 13855 für Körperbewegungen angesetzt wird, und
+filtert vor allem Ausreißer und Sprünge des Messwerts. Taucht ein Objekt
+seitlich im Messbereich auf, kann der Messwert ebenfalls sprunghaft kleiner
+werden und P2 auslösen. Die Reaktion darauf ist in beiden Fällen Motor AUS und
+liegt damit auf der sicheren Seite.
 
 \subsection{Systemzustände}
 \label{sec:states}
