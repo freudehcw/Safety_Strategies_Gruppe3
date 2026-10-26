@@ -17,14 +17,15 @@ realen Aufbau verifiziert werden.
         \midrule
         SAF-01 & Der sichere Zustand des Systems ist Motor AUS. Auf Pi 2 bedeutet dies PWM = 0 und Enable = OFF. & H1--H6 \\
         SAF-02 & Pi 2 muss beim Programmstart im sicheren Zustand bleiben, bis Initialisierung, Sensorprüfung und Kommunikation gültig sind. & H1--H3 \\
-        SAF-03 & Beide Abstandssensoren müssen gültige Werte liefern. Eine Abweichung größer 5\,cm in zwei aufeinanderfolgenden Messzyklen muss zu Motor AUS führen. & H1 \\
+        SAF-03 & Beide Abstandssensoren müssen gültige Werte liefern. Ein Messwert außerhalb von 2--400\,cm oder mit einer Änderung von mehr als 0{,}2\,cm/ms gegenüber der vorherigen Messung ist ungültig. Eine Abweichung der beiden Sensoren größer 5\,cm in zwei aufeinanderfolgenden Messzyklen muss zu Motor AUS führen. & H1 \\
         SAF-04 & Jeder Sensormesswert muss einen Zeitstempel besitzen. Daten älter als 150\,ms dürfen keine Motorfreigabe bewirken. & H3 \\
         SAF-05 & Pi 1 muss alle 100\,ms einen Heartbeat senden. Erhält Pi 2 länger als 300\,ms keine gültige Nachricht, muss der Motor abgeschaltet werden. & H2 \\
-        SAF-06 & Der Safety-Logik-Thread auf Pi 2 soll zyklisch alle 50\,ms laufen und die Safety-Bedingungen vor einer Motorfreigabe prüfen. & H1--H3 \\
+        SAF-06 & Der Safety-Logik-Thread auf Pi 2 muss zyklisch alle 50\,ms laufen und die Safety-Bedingungen vor einer Motorfreigabe prüfen. & H1--H3 \\
         SAF-07 & Nur die gültigen Geschwindigkeitsstufen LOW, MEDIUM und HIGH dürfen verwendet werden. Für jede Stufe muss ein definierter Sicherheitsabstand existieren. & H5 \\
         SAF-08 & Unterschreitet der aktuelle gültige Abstand den Sicherheitsabstand der gewählten Stufe, muss der Motor abgeschaltet werden. & H1, H5 \\
         SAF-09 & Ein Stop/Shutdown-Befehl muss auf Pi 2 zuerst Motor AUS auslösen. Erst danach dürfen Threads und Programm beendet werden. & H4 \\
         SAF-10 & Die endgültigen Sicherheitsabstände müssen am realen Aufbau anhand der beobachteten Reaktions- und Nachlaufzeiten festgelegt und dokumentiert werden. & H4, H5 \\
+        SAF-11 & Der Motor darf nach Motor AUS (Zustand \texttt{FEHLER} oder \texttt{OBJEKT\_STOPP}) nur wieder anlaufen, wenn in einem Zyklus alle Bedingungen gleichzeitig erfüllt sind: kein Stop/Shutdown-Befehl, beide Sensorwerte gültig und plausibel, gültige Nachricht mit gültiger Stufe innerhalb der letzten 300\,ms, Sensordaten nicht älter als 150\,ms und $d_{\min} \geq S$. Der Wiederanlauf erfolgt ohne Quittierung (siehe Abschnitt~\ref{sec:states}). & H1--H3, H5 \\
         \bottomrule
     \end{tabularx}
     \caption{Safety-Anforderungen}
@@ -51,10 +52,10 @@ realen Aufbau verifiziert werden.
 \subsection{Unterstützende Anforderungen}
 
 \begin{itemize}
-    \item Das LCD zeigt Systemzustand, Abstände, Geschwindigkeitsstufe und Fehler an. Das LCD ist keine Safety-Funktion.
-    \item Logging protokolliert wichtige Zustands- und Fehlerereignisse. Logging ist keine Risikominderung und darf den Safety-Logik-Thread nicht blockieren.
-    \item Gemeinsame Daten zwischen Threads müssen konsistent übertragen werden, beispielsweise über Mutex und Snapshot-Kopie.
-    \item Änderungen an Safety-relevanter Software werden über Git versioniert und sollen vor dem Merge überprüft werden.
+    \item Das LCD zeigt den Systemzustand gemäß Abschnitt~\ref{sec:states} (\texttt{INIT}, \texttt{BETRIEB}, \texttt{OBJEKT\_STOPP}, \texttt{FEHLER} mit Fehlercode, \texttt{SHUTDOWN}), die Geschwindigkeitsstufe und den kleinsten gemessenen Abstand $d_{\min}$ an. Die Einzelwerte $d_1$ und $d_2$ werden nur protokolliert (siehe Abschnitt~\ref{sec:distances}). Das LCD ist keine Safety-Funktion.
+    \item Logging protokolliert Ereignisse (Zustandswechsel, Fehler, Stufenwechsel, Verbindungsverlust, Start und Ende) sofort und Messwerte mit 10 Hz, also bei jeder Statusnachricht (siehe Abschnitt~\ref{sec:logging}). Logging ist keine Risikominderung und darf den Safety-Logik-Thread nicht blockieren.
+    \item Gemeinsame Daten zwischen Threads werden je Datensatz durch einen eigenen Mutex mit Prioritätsvererbung geschützt; der Safety-Logik-Thread arbeitet nur mit einer Snapshot-Kopie. Die Bluetooth-Übertragung erfolgt über einen RFCOMM-Socket mit festem Nachrichtenformat (siehe Abschnitte~\ref{sec:shared} und~\ref{sec:bt}).
+    \item Das gesamte Projekt (Code beider Pis, gemeinsame Header, Build-Dateien, Testskripte und Dokumentation) wird über Git versioniert; nur Schlüsselmaterial ist ausgenommen. Änderungen an Safety-relevanter Software müssen vor dem Merge von einem zweiten Gruppenmitglied überprüft werden.
 \end{itemize}
 
 \subsection{Geplante Tests}
@@ -67,11 +68,14 @@ realen Aufbau verifiziert werden.
         \textbf{Test} & \textbf{Durchführung} & \textbf{Erwartetes Ergebnis} \\
         \midrule
         TC-01 & Einen Sensor verdecken oder ungültigen Messwert erzeugen. & Sensorfehler wird erkannt; Motor AUS. \\
+        TC-01a & Im Testmodus einen Messwert außerhalb von 2--400\,cm einspeisen. & Messwert wird als ungültig erkannt (P1); Motor AUS. \\
+        TC-01b & Im Testmodus einen Sprung des Messwerts um mehr als 0{,}2\,cm/ms einspeisen. & Messwert wird als unplausibel erkannt (P2); Motor AUS. \\
         TC-02 & Zwei Sensorwerte um mehr als 5\,cm abweichen lassen. & Nach zwei aufeinanderfolgenden unplausiblen Messzyklen Motor AUS. \\
         TC-03 & Bluetooth-Verbindung während des Motorbetriebs trennen oder Pi 1 anhalten. & Spätestens nach 300\,ms ohne gültige Nachricht wird die Motorfreigabe entzogen. \\
         TC-04 & Sensor-Thread länger als 150\,ms blockieren. & Daten werden als veraltet erkannt; Motor AUS. \\
         TC-05 & Testobjekt in den Sicherheitsabstand der jeweiligen Geschwindigkeitsstufe bewegen. & Motor wird abgeschaltet, sobald der gültige Abstand kleiner als der konfigurierte Sicherheitsabstand ist. \\
         TC-06 & Programmende auf Pi 1 auslösen. & Pi 1 sendet Stop/Shutdown; Pi 2 setzt zuerst Motor AUS und beide Programme beenden kontrolliert. \\
+        TC-09 & Nach TC-05 das Testobjekt aus dem Sicherheitsabstand entfernen; nach TC-03 die Verbindung wiederherstellen. & Motor läuft erst wieder an, wenn alle Bedingungen aus SAF-11 erfüllt sind, und dann ohne Quittierung mit der angeforderten Stufe. \\
         \midrule
         TC-07 \newline \textit{(Security)} & \textbf{Spoofing-Test:} Eine Nachricht mit ungültigem kryptografischen Auth-Tag oder manipuliertem Payload einspeisen. & Die Nachricht wird auf Applikationsebene verworfen. Der Systemzustand bleibt unverändert. \\
         TC-08 \newline \textit{(Security)} & \textbf{Replay-Test:} Eine exakte, gültig verschlüsselte Kopie einer älteren Nachricht (veraltete Sequenznummer) erneut einspeisen. & Die Nachricht wird aufgrund der Sequenznummern-Prüfung verworfen. Motor schaltet nach Timeout ab (falls kein neuer Heartbeat folgt). \\

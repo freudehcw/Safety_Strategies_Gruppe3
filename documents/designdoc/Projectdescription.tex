@@ -59,8 +59,12 @@ innerhalb dieses Abstands oder schlägt eine Safety-Prüfung fehl, wird der Moto
 abgeschaltet.
 
 Raspberry Pi 2 sendet Status, Abstandswerte und Fehlermeldungen an Raspberry Pi
-1 zurück. Diese Informationen werden am LCD angezeigt und können protokolliert
-werden.
+1 zurück. Diese Informationen werden am LCD angezeigt und protokolliert.
+
+Der Motor läuft wieder an, sobald in einem Zyklus des Safety-Logik-Threads alle
+Prüfungen bestanden sind und kein Objekt innerhalb des Sicherheitsabstands
+erkannt wird (Wiederanlaufbedingung, siehe Abschnitt~\ref{sec:states} und
+SAF-11). Eine Quittierung durch den Bediener ist nicht vorgesehen.
 
 \subsection{Zentrale Designparameter}
 
@@ -77,6 +81,8 @@ realen Aufbau getestet und gegebenenfalls angepasst werden.
         Kommunikations-Timeout & 300 ms & Keine gültige Nachricht innerhalb dieses Zeitraums führt zu Motor AUS \\
         Safety-Logik-Zyklus & 50 ms & Zyklische Prüfung der Safety-Bedingungen auf Pi 2 \\
         Max. Alter der Sensordaten & 150 ms & Ältere Messwerte dürfen nicht für eine Freigabe verwendet werden \\
+        Gültiger Messbereich & 2--400 cm & Werte außerhalb des Messbereichs des HC-SR04 sind ungültig \\
+        Max. Abstandsänderung & 0{,}2 cm/ms (= 2 m/s) & Schnellere Änderung zwischen zwei Messungen eines Sensors ist unplausibel \\
         Sensorabweichung & $> 5$ cm in zwei aufeinanderfolgenden Messzyklen & Sensorwerte werden als unplausibel bewertet \\
         Sicherheitsabstände & $S_{\mathrm{LOW}} < S_{\mathrm{MEDIUM}} < S_{\mathrm{HIGH}}$ & Endgültige Werte werden am Demonstrator anhand von Reaktions- und Nachlaufzeit festgelegt \\
         \bottomrule
@@ -85,6 +91,7 @@ realen Aufbau getestet und gegebenenfalls angepasst werden.
 \end{table}
 
 \subsection{Grenzen des Demonstrators}
+\label{sec:limits}
 
 Die tatsächliche Motordrehzahl wird nicht mit einem Encoder gemessen. Daher darf
 nicht angenommen werden, dass ein PWM-Wert proportional zur realen Drehzahl ist.
@@ -93,3 +100,12 @@ Außerdem können zwei gleiche HC-SR04 durch eine gemeinsame Fehlerursache
 ähnliche falsche Werte liefern. Ein Defekt des Motortreibers, bei dem der Motor
 trotz Abschaltsignal weiter bestromt wird, kann mit der vorhandenen Architektur
 nicht sicher beherrscht werden.
+
+Der Wiederanlauf erfolgt automatisch, ohne Quittierung durch den Bediener.
+Nach einem Fehler oder einem Objekt-Stopp kann der Motor daher wieder anlaufen,
+ohne dass der Bediener dies ausdrücklich freigegeben hat. Befindet sich ein
+Objekt genau an der Grenze des Sicherheitsabstands, kann der Motor
+wiederholt ein- und ausschalten. Diese Einschränkungen werden für den
+Demonstrator bewusst akzeptiert. In einer industriellen Anwendung wäre ein
+unerwarteter Wiederanlauf durch eine Quittierung und eine Hysterese zu
+verhindern.

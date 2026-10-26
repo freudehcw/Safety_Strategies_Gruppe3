@@ -2,7 +2,7 @@
 \section{Bedrohungen}
 \label{sec:security}
 
-Die Security-Betrachtung orientiert sich an den klassischen SchutzZielen der
+Die Security-Betrachtung orientiert sich an den klassischen Schutzzielen der
 Informationssicherheit (CIA-Triade: Vertraulichkeit, Integrität,
 Verfügbarkeit) sowie der Authentizität. Der Fokus liegt auf der
 Kommunikation zwischen den beiden Raspberry Pis. Da es sich um ein
@@ -178,7 +178,8 @@ Abstandswert könnte dazu führen, dass der Motor trotz Hindernis nicht stoppt.
 \textbf{Warum nicht vollständig adressiert:} Beide Sensoren nutzen das exakt
 gleiche Messprinzip (Common-Cause-Anfälligkeit). Ein intelligenter
 Acoustic-Spoofing-Angriff kann beide Sensoren zeitgleich so manipulieren, dass
-auch die Plausibilitätsprüfung (Vergleich der beiden Werte) fehlschlägt.
+sie ähnliche falsche Werte liefern. Die Plausibilitätsprüfung (Vergleich der
+beiden Werte) wird dann bestanden und erkennt die Manipulation nicht.
 
 \textbf{Maßnahme im Demonstrator:} Das zeitversetzte Triggern beider Sensoren
 verhindert Eigeninterferenzen. Die Verwendung des kleineren der beiden
