@@ -1,0 +1,55 @@
+name: PDF erstellen und aktualisieren
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: latex-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Projekt herunterladen
+        uses: actions/checkout@v6
+
+      - name: PDF mit Makefile erstellen
+        uses: xu-cheng/texlive-action@v3
+        with:
+          os: debian
+          run: |
+            apt-get update
+            apt-get install -y make
+            mapfile -t files < <(find . -type f -name start.tex -not -path './.git/*')
+            if [ "${#files[@]}" -ne 1 ]; then
+              echo "Es muss genau eine start.tex im Repository geben."
+              exit 1
+            fi
+            cd "$(dirname "${files[0]}")"
+            make -B
+
+      - name: PDF im Repository aktualisieren
+        shell: bash
+        run: |
+          mapfile -d '' -t pdfs < <(find . -type f -name 'Campus26_Gruppe3_Designdokument.pdf' -not -path './.git/*' -print0)
+          if [ "${#pdfs[@]}" -ne 1 ]; then
+            echo "Es muss genau eine fertige PDF geben."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${pdfs[0]}"
+
+          if git diff --cached --quiet; then
+            echo "Die PDF ist bereits aktuell."
+          else
+            git commit -m "PDF automatisch aktualisiert"
+            git push
+          fi
