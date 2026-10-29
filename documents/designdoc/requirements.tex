@@ -40,9 +40,9 @@ realen Aufbau verifiziert werden.
         \toprule
         \textbf{ID} & \textbf{Anforderung} \\
         \midrule
-        SEC-01 & \textbf{Vertraulichkeit \& Authentizität:} Die Kommunikation muss auf Applikationsebene kryptografisch abgesichert sein (z.\,B. AES-GCM), um unberechtigtes Mitlesen und Spoofing zu verhindern. \\
-        SEC-02 & \textbf{Integrität:} Eingehende Nachrichten müssen vor der Verwendung zwingend kryptografisch verifiziert (z.\,B. Prüfung des Auth-Tags) und anschließend auf korrekten Typ, Länge und gültigen Wertebereich geprüft werden. \\
-        SEC-03 & \textbf{Replay-Schutz:} Jede Steuerungsnachricht muss eine Sequenznummer tragen, die kryptografisch an den Payload gebunden ist (z.\,B. als AAD). Alte oder doppelte Nachrichten dürfen nicht akzeptiert werden. \\
+        SEC-01 & \textbf{Vertraulichkeit \& Authentizität:} Die Kommunikation wird auf Applikationsebene mit AES-256-GCM (OpenSSL, EVP-Schnittstelle) und einem statischen 256-Bit-Pre-Shared-Key verschlüsselt und authentifiziert. Jede Nachricht verwendet eine neue, zufällige 96-Bit-Nonce. \\
+        SEC-02 & \textbf{Integrität:} Pi 2 verwendet den Inhalt einer Nachricht erst, nachdem das 128-Bit-GCM-Tag erfolgreich geprüft wurde. Anschließend werden Session-ID, Sequenznummer und Wertebereich der Nutzdaten geprüft. Schlägt eine Prüfung fehl, wird die Nachricht verworfen. \\
+        SEC-03 & \textbf{Replay-Schutz:} Jede Nachricht trägt eine Session-ID und eine Sequenznummer, die als AAD an die Nachricht gebunden sind. Nachrichten mit fremder Session-ID oder mit einer Sequenznummer kleiner oder gleich der zuletzt akzeptierten werden verworfen. \\
         SEC-04 & \textbf{Verfügbarkeit vs. Safety:} Ein Kommunikationsangriff (z.\,B. Jamming) oder Verbindungsausfall darf die lokale Abstandsauswertung auf Pi 2 nicht deaktivieren; bei einem Timeout (siehe SAF-05) geht das System in den sicheren Zustand über (Motor AUS). \\
         \bottomrule
     \end{tabularx}
@@ -71,14 +71,14 @@ realen Aufbau verifiziert werden.
         TC-01a & Im Testmodus einen Messwert außerhalb von 2--400\,cm einspeisen. & Messwert wird als ungültig erkannt (P1); Motor AUS. \\
         TC-01b & Im Testmodus einen Sprung des Messwerts um mehr als 0{,}2\,cm/ms einspeisen. & Messwert wird als unplausibel erkannt (P2); Motor AUS. \\
         TC-02 & Zwei Sensorwerte um mehr als 5\,cm abweichen lassen. & Nach zwei aufeinanderfolgenden unplausiblen Messzyklen Motor AUS. \\
-        TC-03 & Bluetooth-Verbindung während des Motorbetriebs trennen oder Pi 1 anhalten. & Spätestens nach 300\,ms ohne gültige Nachricht wird die Motorfreigabe entzogen. \\
+        TC-03 & Bluetooth-Verbindung während des Motorbetriebs trennen oder Pi 1 anhalten. & Spätestens 350\,ms nach der letzten gültigen Nachricht (300\,ms Timeout plus ein Zyklus, gemessen auf Pi 2) wird die Motorfreigabe entzogen. \\
         TC-04 & Sensor-Thread länger als 150\,ms blockieren. & Daten werden als veraltet erkannt; Motor AUS. \\
         TC-05 & Testobjekt in den Sicherheitsabstand der jeweiligen Geschwindigkeitsstufe bewegen. & Motor wird abgeschaltet, sobald der gültige Abstand kleiner als der konfigurierte Sicherheitsabstand ist. \\
         TC-06 & Programmende auf Pi 1 auslösen. & Pi 1 sendet Stop/Shutdown; Pi 2 setzt zuerst Motor AUS und beide Programme beenden kontrolliert. \\
-        TC-09 & Nach TC-05 das Testobjekt aus dem Sicherheitsabstand entfernen; nach TC-03 die Verbindung wiederherstellen. & Motor läuft erst wieder an, wenn alle Bedingungen aus SAF-11 erfüllt sind, und dann ohne Quittierung mit der angeforderten Stufe. \\
+        TC-07 & Nach TC-05 das Testobjekt aus dem Sicherheitsabstand entfernen; nach TC-03 die Verbindung wiederherstellen. & Motor läuft erst wieder an, wenn alle Bedingungen aus SAF-11 erfüllt sind, und dann ohne Quittierung mit der angeforderten Stufe. \\
         \midrule
-        TC-07 \newline \textit{(Security)} & \textbf{Spoofing-Test:} Eine Nachricht mit ungültigem kryptografischen Auth-Tag oder manipuliertem Payload einspeisen. & Die Nachricht wird auf Applikationsebene verworfen. Der Systemzustand bleibt unverändert. \\
-        TC-08 \newline \textit{(Security)} & \textbf{Replay-Test:} Eine exakte, gültig verschlüsselte Kopie einer älteren Nachricht (veraltete Sequenznummer) erneut einspeisen. & Die Nachricht wird aufgrund der Sequenznummern-Prüfung verworfen. Motor schaltet nach Timeout ab (falls kein neuer Heartbeat folgt). \\
+        TC-08 \newline \textit{(Security)} & \textbf{Spoofing-Test:} Eine Nachricht mit ungültigem kryptografischen Auth-Tag oder manipuliertem Payload einspeisen. & Die Nachricht wird auf Applikationsebene verworfen. Der Systemzustand bleibt unverändert. \\
+        TC-09 \newline \textit{(Security)} & \textbf{Replay-Test:} Eine exakte, gültig verschlüsselte Kopie einer älteren Nachricht (veraltete Sequenznummer) erneut einspeisen; zusätzlich nach einem Verbindungsneuaufbau eine Nachricht aus der vorherigen Verbindung einspeisen. & Die Nachricht wird aufgrund der Sequenznummern- bzw. Session-ID-Prüfung verworfen. Motor schaltet nach Timeout ab (falls kein neuer Heartbeat folgt). \\
         \bottomrule
     \end{tabularx}
     \caption{Geplante System-, Safety- und Security-Tests}
