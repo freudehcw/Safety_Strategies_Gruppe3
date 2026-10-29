@@ -40,7 +40,7 @@ Motorabschaltung nicht verhindern.
         Sensor-Thread 1 / 2 & HC-SR04 auslesen; Messbereich und Abstandsänderung prüfen; Messwert, Gültigkeitsstatus und Zeitstempel bereitstellen \\
         Kommunikations-Thread & Nachrichten von Pi 1 empfangen und prüfen; Heartbeat-Timeout überwachen; Status alle 100 ms an Pi 1 senden \\
         Safety-Logik-Thread & Zyklisch alle 50 ms Sensorplausibilität, Kommunikation und Datenaktualität prüfen; Sicherheitsabstand auswählen und Motorfreigabe entscheiden \\
-        Motorsteuerung & Motorstufe setzen oder Motor mit PWM = 0 und Enable = OFF abschalten \\
+        Motorsteuerungs-Thread & Motorstufe setzen oder Motor mit PWM = 0 und Enable = OFF abschalten \\
         \bottomrule
     \end{tabularx}
     \caption{Softwareaufgaben auf Raspberry Pi 2}
@@ -53,6 +53,7 @@ keine blockierenden Netzwerk- oder Logging-Aufrufe aus. In jedem Zyklus werden
 folgende Prüfungen in dieser Reihenfolge ausgeführt:
 
 \begin{enumerate}
+    \item Wurde ein Stop/Shutdown-Befehl empfangen?
     \item Sind beide Sensorwerte gültig und zueinander plausibel?
     \item Ist die Kommunikation aktuell und der empfangene Befehl gültig?
     \item Sind die verwendeten Sensordaten noch aktuell?
@@ -60,15 +61,15 @@ folgende Prüfungen in dieser Reihenfolge ausgeführt:
     \item Liegt der aktuelle Abstand innerhalb des Sicherheitsabstands?
 \end{enumerate}
 
-Schlägt eine der ersten drei Prüfungen fehl, wird ein Fehlerzustand gesetzt und
-die Motoransteuerung deaktiviert. Erst wenn alle Prüfungen erfolgreich sind,
+Wurde ein Stop/Shutdown-Befehl empfangen, wird der Motor abgeschaltet und das
+Programm kontrolliert beendet. Schlägt eine der Prüfungen 2 bis 4 fehl, wird ein
+Fehlerzustand gesetzt und die Motoransteuerung deaktiviert. Erst wenn alle Prüfungen erfolgreich sind,
 darf die normale Motorsteuerung ausgeführt werden.
 
 \subsection{Verwendete Abstände}
 \label{sec:distances}
 
-Im Dokument werden mehrere Abstände verwendet. Sie haben unterschiedliche
-Aufgaben:
+Die Abstandsüberwachung verwendet folgende Größen:
 
 \begin{table}[H]
     \centering
@@ -92,8 +93,7 @@ protokolliert, damit Abweichungen zwischen den Sensoren nachvollziehbar sind.
 \subsection{Plausibilitätsprüfung der Sensorwerte}
 \label{sec:plausibility}
 
-Die Abweichung der beiden Sensoren ist nicht die einzige Prüfung. Ein
-Sensorwert wird nur verwendet, wenn er alle folgenden Prüfungen besteht. Die
+Ein Sensorwert wird nur verwendet, wenn er die Prüfungen P1--P4 besteht. Die
 Prüfungen P1 und P2 betreffen jeden Sensor einzeln und werden im jeweiligen
 Sensor-Thread durchgeführt. Das Ergebnis wird als Gültigkeitsstatus im
 Datensatz abgelegt. P3 und P4 vergleichen bzw. bewerten die Daten und werden im
@@ -106,7 +106,7 @@ Safety-Logik-Thread durchgeführt.
         \toprule
         \textbf{ID} & \textbf{Prüfung} & \textbf{Bedingung für „ungültig“} & \textbf{Ort} \\
         \midrule
-        P1 & Messbereich & $d < 2$ cm oder $d > 400$ cm (Grenzen des HC-SR04). Ein fehlendes Echo führt zu einem Wert außerhalb des Messbereichs und wird dadurch ebenfalls erkannt. & Sensor-Thread \\
+        P1 & Messbereich & $d < 2$ cm oder $d > 400$ cm (Grenzen des HC-SR04). Bleibt das Echo aus (Timeout), wird der Messwert ebenfalls als ungültig markiert. & Sensor-Thread \\
         P2 & Abstandsänderung & $\frac{|d_k - d_{k-1}|}{t_k - t_{k-1}} > 0{,}2$ cm/ms, also eine Änderung schneller als 2 m/s zwischen zwei Messungen desselben Sensors. & Sensor-Thread \\
         P3 & Quervergleich & $|d_1 - d_2| > 5$ cm in zwei aufeinanderfolgenden Messzyklen. & Safety-Logik \\
         P4 & Datenalter & Messwert älter als 150 ms. & Safety-Logik \\
@@ -115,12 +115,12 @@ Safety-Logik-Thread durchgeführt.
     \caption{Plausibilitätsprüfungen der Abstandssensoren}
 \end{table}
 
-Die Grenze von 2 m/s in P2 liegt über der Annäherungsgeschwindigkeit von
-1{,}6 m/s, die in der EN ISO 13855 für Körperbewegungen angesetzt wird, und
-filtert vor allem Ausreißer und Sprünge des Messwerts. Taucht ein Objekt
-seitlich im Messbereich auf, kann der Messwert ebenfalls sprunghaft kleiner
-werden und P2 auslösen. Die Reaktion darauf ist in beiden Fällen Motor AUS und
-liegt damit auf der sicheren Seite.
+Die Grenze von 2 m/s in P2 entspricht der Annäherungsgeschwindigkeit, die die
+EN ISO 13855 für Handbewegungen ansetzt. P2 filtert vor allem Ausreißer und
+Sprünge des Messwerts. Taucht ein Objekt seitlich im Messbereich auf oder nähert
+es sich schneller, kann der Messwert ebenfalls sprunghaft kleiner werden und P2
+auslösen. Die Reaktion ist in allen Fällen Motor AUS und liegt damit auf der
+sicheren Seite.
 
 \subsection{Systemzustände}
 \label{sec:states}
@@ -157,7 +157,7 @@ bestimmt, in derselben Reihenfolge wie im Flussdiagramm
     \item sonst $\rightarrow$ \texttt{BETRIEB}
 \end{enumerate}
 
-\textbf{Wiederanlaufbedingung:} Der Fehlerzustand wird nicht gespeichert. Aus
+\textbf{Wiederanlaufbedingung:} Der Zustand \texttt{FEHLER} ist nicht selbsthaltend. Aus
 \texttt{FEHLER} oder \texttt{OBJEKT\_STOPP} geht das System in \texttt{BETRIEB}
 über, sobald in einem Zyklus alle folgenden Bedingungen gleichzeitig erfüllt
 sind:
@@ -170,8 +170,8 @@ sind:
     \item $d_{\min} \geq S$ für die aktuell gültige Stufe.
 \end{itemize}
 
-Der Motor läuft dann spätestens im nächsten Zyklus, also nach höchstens 50 ms,
-mit der von Pi 1 angeforderten Stufe an. Eine Quittierung durch den Bediener
+Die Motorstufe wird dann im selben Zyklus freigegeben, und der Motor läuft mit
+der von Pi 1 angeforderten Stufe an. Eine Quittierung durch den Bediener
 ist nicht vorgesehen; die daraus folgenden Einschränkungen sind in
 Abschnitt~\ref{sec:limits} beschrieben.
 
@@ -197,7 +197,8 @@ struct sensor_data {
 Der schreibende Thread aktualisiert den vollständigen Datensatz geschützt durch
 einen Mutex. Der Safety-Logik-Thread kopiert den Datensatz unter demselben Mutex
 in eine lokale Variable und arbeitet anschließend nur mit diesem Snapshot.
-Zeitmessungen für Timeouts und Datenalter sollen mit einer monotonen Uhr erfolgen.
+Zeitmessungen für Timeouts und Datenalter erfolgen mit der monotonen Uhr
+\texttt{CLOCK\_MONOTONIC} (siehe Abschnitt~\ref{subsec:security-addressed}, T3).
 
 Konkret werden folgende gemeinsamen Datensätze verwendet:
 
@@ -234,21 +235,24 @@ Die Kommunikation ist bidirektional. Raspberry Pi 1 sendet Sollstufe,
 Heartbeat, Sequenznummer und gegebenenfalls einen Stop/Shutdown-Befehl.
 Raspberry Pi 2 sendet Status, aktuelle Abstandswerte und Fehlermeldungen zurück.
 
-Nachrichten werden mindestens auf Nachrichtentyp, Länge, Wertebereich und
-Sequenznummer geprüft. Alte, doppelte oder unzulässige Befehle werden nicht als
-gültige Motorfreigabe verwendet. Bleibt eine gültige Nachricht länger als
+Bevor die Nutzdaten gelesen werden, prüft Pi 2, ob die Länge zum
+Nachrichtentyp passt. Ein unbekannter Typ oder eine falsche Länge führt zum
+Abbau der Verbindung, da der Datenstrom danach nicht mehr synchron ist. Nach dem
+Einlesen prüft Pi 2 zuerst das GCM-Tag, danach Session-ID, Sequenznummer und
+Wertebereich der Nutzdaten. Schlägt eine dieser Prüfungen fehl, wird die
+Nachricht verworfen. Bleibt eine gültige Nachricht länger als
 300 ms aus, wird die Kommunikation als fehlerhaft bewertet und der Motor
 abgeschaltet.
 
 \textbf{Umsetzung der Datenübertragung:}
 
 \begin{itemize}
-    \item Die Verbindung wird als RFCOMM-Socket über die BlueZ-Socket-API aufgebaut (\texttt{AF\_BLUETOOTH}, \texttt{SOCK\_STREAM}, \texttt{BTPROTO\_RFCOMM}). Pi 2 ist Server und wartet auf einem festen Kanal, Pi 1 ist Client. Die beiden Geräte werden einmalig gekoppelt.
+    \item Die Verbindung wird als RFCOMM-Socket über die BlueZ-Socket-API aufgebaut (\texttt{AF\_BLUETOOTH}, \texttt{SOCK\_STREAM}, \texttt{BTPROTO\_RFCOMM}). Pi 2 ist Server und wartet auf einem festen Kanal, Pi 1 ist Client. Die beiden Geräte werden einmalig gekoppelt. Nach dem Verbindungsaufbau sendet Pi 2 zuerst eine \texttt{STATUS}-Nachricht mit einer neuen Session-ID; erst danach beginnt Pi 1 mit den Heartbeats (siehe Abschnitt~\ref{subsec:security-addressed}, T2).
     \item Da RFCOMM einen Datenstrom und keine einzelnen Pakete liefert, beginnt jede Nachricht mit einem Typ- und einem Längenfeld. Der Empfänger liest zuerst diese Felder und danach genau die angegebene Anzahl Bytes.
-    \item Nachrichten werden Feld für Feld in ein Byte-Array mit fester Byte-Reihenfolge geschrieben, nicht als C-\texttt{struct} kopiert. Dadurch spielen Padding und Compiler-Unterschiede keine Rolle.
+    \item Nachrichten werden Feld für Feld in ein Byte-Array in Big-Endian-Reihenfolge (Network Byte Order, umgesetzt mit \texttt{htons()} und \texttt{htonl()}) geschrieben, nicht als C-\texttt{struct} kopiert. Dadurch spielen Padding und Compiler-Unterschiede keine Rolle.
     \item Abstände werden als ganze Millimeter (\texttt{uint16\_t}) übertragen, Stufen, Zustände und Fehlercodes als \texttt{uint8\_t} mit festgelegten Werten. Unbekannte Werte führen zum Verwerfen der Nachricht.
     \item Der Kommunikations-Thread wartet mit \texttt{poll()} und einem Timeout von 50 ms auf Daten. Er blockiert dadurch nie dauerhaft und kann den Heartbeat-Timeout auch dann auswerten, wenn keine Daten ankommen.
-    \item Bricht die Verbindung ab, versucht Pi 1 zyklisch, sie neu aufzubauen. Pi 2 bleibt währenddessen über den Kommunikations-Timeout im Zustand \texttt{FEHLER}.
+    \item Bricht die Verbindung ab, versucht Pi 1 jede Sekunde, sie neu aufzubauen. Pi 2 bleibt währenddessen über den Kommunikations-Timeout im Zustand \texttt{FEHLER}.
 \end{itemize}
 
 \begin{table}[H]
@@ -267,8 +271,51 @@ abgeschaltet.
     \caption{Nachrichtentypen zwischen Pi 1 und Pi 2}
 \end{table}
 
-Jede Nachricht enthält zusätzlich die Sequenznummer und die kryptografische
-Absicherung gemäß Abschnitt~\ref{sec:security}.
+Tabelle~\ref{tab:frame} zeigt den Aufbau eines Frames,
+Tabelle~\ref{tab:kodierung} die Kodierung der Werte. Die kryptografische
+Absicherung ist in Abschnitt~\ref{subsec:security-addressed} (T1, T2)
+beschrieben.
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{1.3cm}p{3.0cm}p{1.4cm}Y@{}}
+        \toprule
+        \textbf{Offset} & \textbf{Feld} & \textbf{Größe} & \textbf{Inhalt} \\
+        \midrule
+        0 & Typ & 1 B & Nachrichtentyp (Tabelle~\ref{tab:kodierung}) \\
+        1 & Länge & 2 B & Länge $n$ der Nutzdaten in Byte \\
+        3 & Session-ID & 4 B & Zufallswert von Pi 2 je Verbindung \\
+        7 & Sequenznummer & 4 B & beginnt je Verbindung bei 1 \\
+        11 & Nonce & 12 B & zufällig je Nachricht (\texttt{getrandom()}) \\
+        23 & Nutzdaten & $n$ B & mit AES-256-GCM verschlüsselt \\
+        $23+n$ & Tag & 16 B & GCM-Authentifizierungstag \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Aufbau eines Frames. Die Bytes 0--10 (Typ, Länge, Session-ID,
+    Sequenznummer) werden unverschlüsselt übertragen und als AAD authentifiziert.}
+    \label{tab:frame}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}p{2.2cm}Y@{}}
+        \toprule
+        \textbf{Feld} & \textbf{Kodierung (\texttt{uint8\_t}, sofern nicht anders angegeben)} \\
+        \midrule
+        Typ & \texttt{0x01} \texttt{HEARTBEAT} ($n=1$), \texttt{0x02} \texttt{STOP} ($n=0$), \texttt{0x03} \texttt{STATUS} ($n=7$), \texttt{0x04} \texttt{ACK} ($n=0$) \\
+        Stufe & \texttt{0x01} \texttt{LOW}, \texttt{0x02} \texttt{MEDIUM}, \texttt{0x03} \texttt{HIGH}; in \texttt{STATUS} zusätzlich \texttt{0x00} = Motor AUS \\
+        Zustand & \texttt{0x00} \texttt{INIT}, \texttt{0x01} \texttt{BETRIEB}, \texttt{0x02} \texttt{OBJEKT\_STOPP}, \texttt{0x03} \texttt{FEHLER}, \texttt{0x04} \texttt{SHUTDOWN} \\
+        Fehlercode & \texttt{0x00} kein Fehler, \texttt{0x01} \texttt{SENSOR}, \texttt{0x02} \texttt{KOMMUNIKATION}, \texttt{0x03} \texttt{DATENALTER} \\
+        $d_1$, $d_2$ & \texttt{uint16\_t} in mm; \texttt{0xFFFF} = kein gültiger Messwert \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Kodierung der Nutzdaten. \texttt{HEARTBEAT} enthält die Sollstufe;
+    \texttt{STATUS} enthält Zustand, Fehlercode, aktive Stufe, $d_1$ und $d_2$ in
+    dieser Reihenfolge.}
+    \label{tab:kodierung}
+\end{table}
 
 \subsection{Motorsteuerung}
 
@@ -281,7 +328,9 @@ wird durch
     \texttt{PWM = 0} und \texttt{Enable = OFF}
 \end{center}
 
-angefordert. Der mechanische Nachlauf des Rotors wird dadurch nicht aufgehoben.
+angefordert. \texttt{Enable} bezeichnet dabei den Standby-Eingang STBY des
+Motortreibers TB6612FNG; \texttt{Enable = OFF} entspricht STBY = LOW. Der
+mechanische Nachlauf des Rotors wird dadurch nicht aufgehoben.
 
 \subsection{Anzeige und Logging}
 \label{sec:logging}
@@ -301,6 +350,11 @@ Das Log wird als CSV-Datei geschrieben. Die Ausgabe erfolgt gepuffert und wird
 einmal pro Sekunde sowie bei jedem Fehlerereignis auf die SD-Karte
 geschrieben, damit Logging die Bedienung und Kommunikation nicht verzögert.
 
+Im Testmodus protokolliert Pi 2 zusätzlich den Empfangszeitpunkt der letzten
+gültigen Nachricht und den Zeitpunkt jedes Zustandswechsels mit seiner monotonen
+Uhr in eine lokale Datei, um Reaktionszeiten messen zu können. Die Datei wird
+außerhalb des Safety-Logik-Threads geschrieben.
+
 \subsection{Initialisierung und kontrolliertes Beenden}
 
 Beim Start von Raspberry Pi 2 ist die Motoransteuerung deaktiviert. Eine
@@ -314,13 +368,14 @@ kann Pi 1 seine eigenen Threads und Ressourcen kontrolliert beenden.
 
 \subsection{Programmierrichtlinien und Versionskontrolle}
 
-Der C-Code soll MISRA-C-Regeln soweit im Projekt praktikabel berücksichtigen.
+Der C-Code orientiert sich an MISRA~C. Die Einhaltung wird mit cppcheck und
+dessen MISRA-Addon geprüft; bewusste Abweichungen werden im Code begründet.
 Insbesondere werden feste Datentypen, geprüfte Rückgabewerte, definierte
 Wertebereiche, ein \texttt{default}-Zweig in \texttt{switch}-Anweisungen und
 möglichst kurze, klar abgegrenzte Funktionen verwendet. Gemeinsame Konstanten
 wie Timeouts und Grenzwerte werden zentral definiert.
 
-Das gesamte Projekt wird mit Git versioniert, nicht nur der Safety-Teil. Im
+Das gesamte Projekt wird mit Git versioniert. Im
 Repository liegen:
 
 \begin{itemize}
@@ -354,4 +409,4 @@ Die folgenden Abbildungen zeigen die Pinbelegung der beiden Raspberry Pis.
     \caption{Pinbelegung von Raspberry Pi 2}
     \label{fig:pinout_pi2}
 \end{figure}
-Der Link zum Github-Repository lautet \url{https://github.com/freudehcw/Safety_Strategies_Gruppe3}
+Der Link zum GitHub-Repository lautet \url{https://github.com/freudehcw/Safety_Strategies_Gruppe3}
