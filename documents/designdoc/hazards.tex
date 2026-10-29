@@ -7,7 +7,7 @@ werden durch konkrete Maßnahmen im Design adressiert. Drei weitere werden bewus
 nicht vollständig adressiert, weil dafür zusätzliche unabhängige oder
 sicherheitsgerichtete Hardware erforderlich wäre.
 
-\keybox{Sicherer Zustand: Motor AUS -- der Rotor wird nicht aktiv angetrieben.}
+Der sichere Zustand ist in allen Fällen Motor AUS (siehe Abschnitt~\ref{sec:project}).
 
 \subsection{Übersicht}
 
@@ -22,7 +22,7 @@ sicherheitsgerichtete Hardware erforderlich wäre.
         H2 & Adressiert & Motor arbeitet mit einem veralteten oder ungültigen Geschwindigkeitsbefehl weiter. & 10-Hz-Heartbeat, Sequenznummer und 300-ms-Timeout; bei Kommunikationsfehler Motor AUS. \\
         H3 & Adressiert & Motor läuft weiter, obwohl veraltete Sensordaten verwendet werden. & Zeitstempel je Messwert, maximales Datenalter 150 ms; bei Überschreitung Motor AUS. \\
         H4 & Nicht vollständig adressiert & Rotor läuft trotz angefordertem STOP weiter oder kommt zu spät zum Stillstand. & Software setzt PWM = 0 und Enable = OFF; Nachlauf wird berücksichtigt, Defekt der Leistungsstufe bleibt offen. \\
-        H5 & Nicht vollständig adressiert & Tatsächliche Motordrehzahl ist höher als vom System angenommen. & Keine unabhängige Drehzahlmessung; konservative Geschwindigkeitsklassen und Schutzabstände. \\
+        H5 & Nicht vollständig adressiert & Tatsächliche Motordrehzahl ist höher als vom System angenommen. & Keine unabhängige Drehzahlmessung; konservative Geschwindigkeitsklassen und Sicherheitsabstände. \\
         H6 & Nicht vollständig adressiert & Beide HC-SR04 liefern gleichzeitig ähnliche falsche Werte. & Quervergleich erkennt Common-Cause-Fehler nicht sicher; Grenze wird dokumentiert. \\
         \bottomrule
     \end{tabularx}
@@ -176,8 +176,9 @@ Plausibilitätsprüfung erfolgreich sein, obwohl der reale Abstand gefährlich
 klein ist.
 
 \hazfield{Maßnahme im Demonstrator}
-Die Sensoren werden zeitlich versetzt angesteuert und die Einschränkung des
-Quervergleichs wird ausdrücklich dokumentiert.
+Keine wirksame Maßnahme im Demonstrator; die Einschränkung des
+Quervergleichs wird ausdrücklich dokumentiert. Das zeitversetzte Ansteuern der
+Sensoren verhindert nur, dass sie sich gegenseitig stören.
 
 \hazfield{Industrielle Lösung}
 Geeignete sicherheitsgerichtete Sensorik und je nach Anwendung diversitäre
