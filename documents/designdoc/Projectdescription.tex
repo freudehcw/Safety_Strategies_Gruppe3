@@ -61,10 +61,9 @@ abgeschaltet.
 Raspberry Pi 2 sendet Status, Abstandswerte und Fehlermeldungen an Raspberry Pi
 1 zurück. Diese Informationen werden am LCD angezeigt und protokolliert.
 
-Der Motor läuft wieder an, sobald in einem Zyklus des Safety-Logik-Threads alle
-Prüfungen bestanden sind und kein Objekt innerhalb des Sicherheitsabstands
-erkannt wird (Wiederanlaufbedingung, siehe Abschnitt~\ref{sec:states} und
-SAF-11). Eine Quittierung durch den Bediener ist nicht vorgesehen.
+Nach einer Abschaltung läuft der Motor ohne Quittierung wieder an, sobald alle
+Prüfungen bestanden sind (Wiederanlaufbedingung, siehe
+Abschnitt~\ref{sec:states}).
 
 \subsection{Zentrale Designparameter}
 
