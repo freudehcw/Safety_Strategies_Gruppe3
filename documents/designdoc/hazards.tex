@@ -75,7 +75,7 @@ Nachrichteninhalt ungültig.
 
 \hazfield{Erkennung und Maßnahme}
 Pi 1 sendet alle 100 ms einen Heartbeat zusammen mit dem aktuellen Befehl. Pi 2
-prüft Wertebereich und Sequenznummer. Trifft länger als 300 ms keine gültige
+prüft Wertebereich, Session-ID und Sequenznummer. Trifft länger als 300 ms keine gültige
 Nachricht ein, wird ein Kommunikationsfehler gesetzt. Damit entsprechen drei
 ausbleibende Heartbeats dem Timeout.
 
