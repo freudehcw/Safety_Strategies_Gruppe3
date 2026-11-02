@@ -38,7 +38,7 @@ Motorabschaltung nicht verhindern.
         \midrule
         Initialisierung & Motor sicher deaktivieren, Sensoren, Bluetooth und Threads initialisieren \\
         Sensor-Thread 1 / 2 & HC-SR04 auslesen; Messbereich und Abstandsänderung prüfen; Messwert, Gültigkeitsstatus und Zeitstempel bereitstellen \\
-        Kommunikations-Thread & Nachrichten von Pi 1 empfangen und prüfen; Heartbeat-Timeout überwachen; Status alle 100 ms an Pi 1 senden \\
+        Kommunikations-Thread & Nachrichten von Pi 1 empfangen und prüfen; Zeitstempel der letzten gültigen Nachricht aktualisieren; Status alle 100 ms an Pi 1 senden \\
         Safety-Logik-Thread & Zyklisch alle 50 ms Sensorplausibilität, Kommunikation und Datenaktualität prüfen; Sicherheitsabstand auswählen und Motorfreigabe entscheiden \\
         Motorsteuerungs-Thread & Motorstufe setzen oder Motor mit PWM = 0 und Enable = OFF abschalten \\
         \bottomrule
@@ -241,8 +241,10 @@ Abbau der Verbindung, da der Datenstrom danach nicht mehr synchron ist. Nach dem
 Einlesen prüft Pi 2 zuerst das GCM-Tag, danach Session-ID, Sequenznummer und
 Wertebereich der Nutzdaten. Schlägt eine dieser Prüfungen fehl, wird die
 Nachricht verworfen. Bleibt eine gültige Nachricht länger als
-300 ms aus, wird die Kommunikation als fehlerhaft bewertet und der Motor
-abgeschaltet.
+300 ms aus, wird die Kommunikation als fehlerhaft bewertet. Der
+Safety-Logik-Thread berechnet das Alter der letzten gültigen Nachricht in jedem
+Zyklus selbst und entzieht die Motorfreigabe daher spätestens 350 ms nach der
+letzten gültigen Nachricht (300 ms Timeout plus Zyklus von 50 ms).
 
 \textbf{Umsetzung der Datenübertragung:}
 
@@ -251,7 +253,7 @@ abgeschaltet.
     \item Da RFCOMM einen Datenstrom und keine einzelnen Pakete liefert, beginnt jede Nachricht mit einem Typ- und einem Längenfeld. Der Empfänger liest zuerst diese Felder und danach genau die angegebene Anzahl Bytes.
     \item Nachrichten werden Feld für Feld in ein Byte-Array in Big-Endian-Reihenfolge (Network Byte Order, umgesetzt mit \texttt{htons()} und \texttt{htonl()}) geschrieben, nicht als C-\texttt{struct} kopiert. Dadurch spielen Padding und Compiler-Unterschiede keine Rolle.
     \item Abstände werden als ganze Millimeter (\texttt{uint16\_t}) übertragen, Stufen, Zustände und Fehlercodes als \texttt{uint8\_t} mit festgelegten Werten. Unbekannte Werte führen zum Verwerfen der Nachricht.
-    \item Der Kommunikations-Thread wartet mit \texttt{poll()} und einem Timeout von 50 ms auf Daten. Er blockiert dadurch nie dauerhaft und kann den Heartbeat-Timeout auch dann auswerten, wenn keine Daten ankommen.
+    \item Der Kommunikations-Thread wartet mit \texttt{poll()} und einem Timeout von 50 ms auf Daten. Er blockiert dadurch nie dauerhaft und bleibt auch dann reaktionsfähig, wenn keine Daten ankommen. Das Ausbleiben von Nachrichten wertet der Safety-Logik-Thread über den Zeitstempel in \texttt{comm\_data} aus.
     \item Bricht die Verbindung ab, versucht Pi 1 jede Sekunde, sie neu aufzubauen. Pi 2 bleibt währenddessen über den Kommunikations-Timeout im Zustand \texttt{FEHLER}.
 \end{itemize}
 
