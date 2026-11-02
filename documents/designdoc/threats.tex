@@ -26,7 +26,7 @@ Plattformmaßnahmen (z.\,B. Secure Boot, diversitäre Sensorik) erforderlich wä
         \midrule
         T1 & Unberechtigtes Gerät sendet Befehle (Spoofing) & Verlust der Integrität und Authentizität: Unerwünschte Motorbedienung & Absicherung auf Applikationsebene (AES-GCM); Pi~2 prüft kryptografisch, dass der Absender den gemeinsamen Schlüssel besitzt und die Nachricht unverändert ist. \\
         T2 & Alte Nachricht wird erneut verarbeitet (Replay) & Veralteter Befehl könnte erneut wirksam werden & Fortlaufende Sequenznummer und Session-ID, die als AAD in AES-GCM kryptografisch an die Nachricht gebunden sind. \\
-        T3 & Bluetooth wird gestört oder fällt aus (Jamming) & Verlust der Verfügbarkeit: Pi~2 erhält keine aktuellen Befehle mehr & Heartbeat und 300-ms-Timeout; bei Kommunikationsverlust Motor AUS. Safety bleibt erhalten. \\
+        T3 & Bluetooth wird gestört oder fällt aus (Jamming) & Verlust der Verfügbarkeit: Pi~2 erhält keine aktuellen Befehle mehr & Heartbeat und 300-ms-Timeout; bei Kommunikationsverlust Motor AUS (spätestens nach 350 ms). Safety bleibt erhalten. \\
         \midrule
         T4 & Kompromittierter Sender (Pi~1) sendet manipulierte Befehle & Unerwünschte Geschwindigkeitsstufe, falsche Statusanzeige für Bediener & \textit{Nicht vollständig adressiert.} Pi~2 entscheidet lokal über die Abschaltung; der Sicherheitsabstand gilt für jede Stufe. \\
         T5 & Manipulation von Software oder Konfiguration auf Pi~2 & Grenzwerte oder Safety-Logik werden deaktiviert (Integritätsverlust) & \textit{Nicht vollständig adressiert.} Konstanten zentral definiert und über Git versioniert; kein Schutz am laufenden Gerät (kein Secure Boot). \\
@@ -128,25 +128,32 @@ Uhrzeit. Da jeder Raspberry Pi seine eigene monotone Uhr besitzt, werden
 Zeitstempel nur auf demselben Gerät verglichen: Pi~2 bewertet ausschließlich den
 Empfangszeitpunkt einer Nachricht auf seiner eigenen Uhr. Trifft länger als 300\,ms keine
 Nachricht mit korrektem Auth-Tag und neuer Sequenznummer ein, wird ein Kommunikationsfehler
-gesetzt. Die lokale Abstandsauswertung bleibt davon unabhängig bestehen.
+gesetzt. Der Safety-Logik-Thread (Zyklus 50\,ms) wertet das Alter der letzten
+gültigen Nachricht in jedem Zyklus selbst aus und entzieht die Motorfreigabe daher
+spätestens 350\,ms nach der letzten gültigen Nachricht (300\,ms Timeout plus ein
+Zyklus). Die lokale Abstandsauswertung bleibt davon unabhängig bestehen.
 
 \textbf{Reaktion:}
 \begin{center}
-    Kein gültiger Heartbeat innerhalb von 300\,ms $\rightarrow$ Motor AUS
+    Kein gültiger Heartbeat innerhalb von 300\,ms $\rightarrow$ Kommunikationsfehler $\rightarrow$ Motor AUS (spätestens nach 350\,ms)
 \end{center}
 
 Ein Angreifer kann somit zwar die Verfügbarkeit des Demonstrators stören, das
 System geht jedoch in einen sicheren Zustand über (Fail-Safe).
 
 \textbf{Test:} Während des Motorbetriebs wird auf Pi~1 die Bluetooth-Schnittstelle
-per Software blockiert (\texttt{rfkill block bluetooth}). Da Pi~1 danach keine
-Statusmeldungen mehr empfängt und die Uhren beider Geräte nicht vergleichbar
-sind, wird die Reaktionszeit auf Pi~2 gemessen: Pi~2 protokolliert im Testmodus
-den Empfangszeitpunkt der letzten gültigen Nachricht und den Zeitpunkt von
-Motor AUS mit seiner monotonen Uhr (siehe Abschnitt~\ref{sec:logging}). Die
-Differenz darf höchstens 350\,ms betragen (300\,ms Timeout plus ein Zyklus des
-Safety-Logik-Threads). Zur unabhängigen Kontrolle kann zusätzlich der STBY-Pin
-mit einem Logic Analyzer beobachtet werden.
+per Software blockiert (\texttt{rfkill block bluetooth}). Pi~1 kann danach keine
+Heartbeats mehr senden, und Pi~2 muss den Motor spätestens 350\,ms nach der
+letzten gültigen Nachricht abschalten (300\,ms Timeout plus ein Zyklus des
+Safety-Logik-Threads). Da die monotonen Uhren von Pi~1 und Pi~2 nicht
+vergleichbar sind, wird die Reaktionszeit ausschließlich auf Pi~2 gemessen:
+Pi~2 protokolliert im Testmodus den Empfangszeitpunkt der letzten gültigen
+Nachricht und den Zeitpunkt von Motor AUS mit seiner eigenen monotonen Uhr
+(siehe Abschnitt~\ref{sec:logging}). Die Differenz darf höchstens 350\,ms
+betragen. Zur unabhängigen Kontrolle kann zusätzlich der STBY-Pin mit einem
+Logic Analyzer beobachtet werden. Dort ist wegen der Latenz des
+Motorsteuerungs-Threads und des Nicht-Echtzeit-Betriebssystems eine kleine
+Toleranz einzuplanen.
 
 \subsection{Nicht vollständig adressierte Bedrohungen}
 
