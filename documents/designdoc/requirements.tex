@@ -19,7 +19,7 @@ realen Aufbau verifiziert werden.
         SAF-02 & Pi 2 muss beim Programmstart im sicheren Zustand bleiben, bis Initialisierung, Sensorprüfung und Kommunikation gültig sind. & H1--H3 \\
         SAF-03 & Beide Abstandssensoren müssen gültige Werte liefern. Ein Messwert außerhalb von 2--400\,cm oder mit einer Änderung von mehr als 0{,}2\,cm/ms gegenüber der vorherigen Messung ist ungültig. Eine Abweichung der beiden Sensoren größer 5\,cm in zwei aufeinanderfolgenden Messzyklen muss zu Motor AUS führen. & H1 \\
         SAF-04 & Jeder Sensormesswert muss einen Zeitstempel besitzen. Daten älter als 150\,ms dürfen keine Motorfreigabe bewirken. & H3 \\
-        SAF-05 & Pi 1 muss alle 100\,ms einen Heartbeat senden. Erhält Pi 2 länger als 300\,ms keine gültige Nachricht, muss der Motor abgeschaltet werden. & H2 \\
+        SAF-05 & Pi 1 muss alle 100\,ms einen Heartbeat senden. Erhält Pi 2 länger als 300\,ms keine gültige Nachricht, wird ein Kommunikationsfehler gesetzt. Der Motor muss spätestens 350\,ms nach der letzten gültigen Nachricht abgeschaltet sein (300\,ms Timeout plus ein Zyklus des Safety-Logik-Threads). & H2 \\        
         SAF-06 & Der Safety-Logik-Thread auf Pi 2 muss zyklisch alle 50\,ms laufen und die Safety-Bedingungen vor einer Motorfreigabe prüfen. & H1--H3 \\
         SAF-07 & Nur die gültigen Geschwindigkeitsstufen LOW, MEDIUM und HIGH dürfen verwendet werden. Für jede Stufe muss ein definierter Sicherheitsabstand existieren. & H5 \\
         SAF-08 & Unterschreitet der aktuelle gültige Abstand den Sicherheitsabstand der gewählten Stufe, muss der Motor abgeschaltet werden. & H1, H5 \\
