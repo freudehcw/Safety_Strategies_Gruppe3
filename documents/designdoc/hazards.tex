@@ -80,12 +80,12 @@ Nachricht ein, wird ein Kommunikationsfehler gesetzt. Damit entsprechen drei
 ausbleibende Heartbeats dem Timeout.
 
 \hazfield{Fail-Safe-Reaktion}
-\failsafe{Kommunikationsfehler oder Timeout $\rightarrow$ Motor AUS}
+\failsafe{Kommunikationsfehler oder Timeout $\rightarrow$ Motor AUS (spätestens 350 ms nach der letzten gültigen Nachricht)}
 
 \hazfield{Test}
 Während des Motorbetriebs die Bluetooth-Verbindung trennen oder das Pi-1-Programm
-anhalten. Spätestens nach dem definierten Timeout muss Pi 2 den Motor
-abschalten.
+anhalten. Spätestens 350 ms nach der letzten gültigen Nachricht muss Pi 2 den
+Motor abschalten (300 ms Timeout plus ein Zyklus des Safety-Logik-Threads).
 
 \subsubsection{H3 -- Veraltete Sensordaten}
 \label{haz:h3}
