@@ -20,7 +20,7 @@ Motorfreigabe ist möglich.
 
 \begin{enumerate}
     \item \textbf{Sensorplausibilität:} Beide Sensorwerte müssen gültig sein. Eine Abweichung von mehr als 5 cm in zwei aufeinanderfolgenden Messzyklen wird als Fehler bewertet. Zusätzlich werden Messbereich und Abstandsänderung jedes Sensors geprüft (siehe Abschnitt~\ref{sec:plausibility}).
-    \item \textbf{Kommunikation:} Eine gültige Nachricht bzw. ein Heartbeat muss rechtzeitig eintreffen. Bei mehr als 300 ms ohne gültige Nachricht wird der Motor abgeschaltet.
+    \item \textbf{Kommunikation:} Eine gültige Nachricht bzw. ein Heartbeat muss rechtzeitig eintreffen. Bei mehr als 300 ms ohne gültige Nachricht wird die Motorfreigabe entzogen (spätestens 350 ms nach der letzten gültigen Nachricht).
     \item \textbf{Datenaktualität:} Sensordaten dürfen höchstens 150 ms alt sein. Ältere Daten gelten als ungültig.
 \end{enumerate}
 
