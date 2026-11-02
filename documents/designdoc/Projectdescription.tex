@@ -77,7 +77,8 @@ realen Aufbau getestet und gegebenenfalls angepasst werden.
         \textbf{Parameter} & \textbf{Startwert} & \textbf{Bedeutung} \\
         \midrule
         Heartbeat Pi 1 $\rightarrow$ Pi 2 & 100 ms (10 Hz) & Zyklische Lebensmeldung und Übertragung der Sollstufe \\
-        Kommunikations-Timeout & 300 ms & Keine gültige Nachricht innerhalb dieses Zeitraums führt zu Motor AUS \\
+        Kommunikations-Timeout (Erkennungsschwelle) & 300 ms & Keine gültige Nachricht innerhalb dieses Zeitraums wird als Kommunikationsfehler gewertet \\
+        Max. Reaktionszeit bei Kommunikationsverlust & 350 ms & 300 ms Timeout plus ein Zyklus der Safety-Logik (50 ms) bis Motor AUS angefordert wird \\
         Safety-Logik-Zyklus & 50 ms & Zyklische Prüfung der Safety-Bedingungen auf Pi 2 \\
         Max. Alter der Sensordaten & 150 ms & Ältere Messwerte dürfen nicht für eine Freigabe verwendet werden \\
         Gültiger Messbereich & 2--400 cm & Werte außerhalb des Messbereichs des HC-SR04 sind ungültig \\
