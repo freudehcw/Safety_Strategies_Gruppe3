@@ -1,0 +1,63 @@
+\documentclass[12pt,a4paper,oneside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\geometry{left=24mm,right=24mm,top=25mm,bottom=25mm}
+\graphicspath{{images/}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\emergencystretch=2em
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{2}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    pdftitle={Designdokument Security -- SSM-Demonstrator Sicherheitsanalyse},
+    pdfauthor={Gruppe 3}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Designdokument -- SSM-Demonstrator}
+\rhead{Gruppe 3}
+\cfoot{\thepage}
+\setlength{\headheight}{15pt}
+
+% Hilfsmakros
+\newcommand{\keybox}[1]{%
+    \begin{center}
+        \fbox{\parbox{0.86\textwidth}{\centering\textbf{#1}}}
+    \end{center}}
+\newcommand{\hazfield}[1]{\par\medskip\noindent\textbf{#1:}\enspace}
+\newcommand{\failsafe}[1]{\keybox{#1}}
+\newcommand{\hazop}[1]{\par\smallskip\noindent\textbf{HAZOP Guide Words:} #1\par}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+
+\input{title}
+\begingroup
+\setlength{\parskip}{0pt}
+\tableofcontents
+\endgroup
+\newpage
+
+\input{sbom}
+\input{static_analysis}
+\input{stride}
+
+\end{document}
