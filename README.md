@@ -10,6 +10,11 @@ Demonstrator für ein geschwindigkeitsabhängiges Schutzsystem eines rotierenden
 *   *Workaround:* Entwicklung und Unit-Testing der Kern-Logik (UI, Safety-Algorithmen, Crypto) ist möglich, wenn Hardware-Abhängigkeiten in CMake auskommentiert oder gemockt werden. Benötigt wird: **CMake, GCC/Clang (z.B. via MSYS2), OpenSSL**.
 *   *Empfehlung:* Nutze **WSL2** (Windows Subsystem for Linux), um das Linux-Setup auszuführen (siehe unten).
 
+### macOS
+*   **Eingeschränkt unterstützt:** Ähnlich wie bei Windows sind `BlueZ` und `pigpio` unter macOS nicht verfügbar. 
+*   Die Entwicklung von Kern-Logik und Unit-Tests wird jedoch nativ unterstützt.
+*   Voraussetzung: **Homebrew** (`brew`) muss auf dem System installiert sein, um Compiler, CMake und OpenSSL zu beziehen.
+
 ### Linux
 Die benötigten Bibliotheken variieren leicht je nach Distribution. Folgende Basis-Tools werden erwartet:
 *   Compiler: `gcc`, `gcc-c++`, `make` (oder `build-essential`)
@@ -21,13 +26,22 @@ Die benötigten Bibliotheken variieren leicht je nach Distribution. Folgende Bas
 
 ### Windows (ohne WSL)
 Da keine offiziellen Build-Skripte für Windows existieren, muss der Build manuell über CMake erfolgen:
-```powershell
+```Powershell
 mkdir build
 cd build
 cmake .. -DPI1_APP_NAME="pi1_app" -DPI2_APP_NAME="pi2_app"
 cmake --build .
 ```
 *(Achtung: Dies kompiliert nur erfolgreich, wenn Linux-spezifische Code-Teile auskommentiert wurden).*
+
+### macOS
+Unser Bootstrap-Skript erkennt macOS automatisch und installiert die nötigen Basis-Tools via Homebrew.
+
+```Bash
+./bootstrap.sh
+cd build
+make -j4
+```
 
 ### Linux (und WSL2)
 Wir verwenden ein Bootstrap-Skript, das den Paketmanager (`apt`, `dnf`, `zypper`, `brew`) automatisch erkennt, alle Abhängigkeiten installiert und das CMake-Projekt vorbereitet.
