@@ -1,0 +1,80 @@
+/*
+ * pi2_config.h - Pi-2-spezifische Konstanten: Pinbelegung (BCM-Nummerierung,
+ * siehe Designdokument Abschnitt "Pinout"), Zeitverhalten der Threads und
+ * Motoransteuerung.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
+#ifndef PI2_CONFIG_H
+#define PI2_CONFIG_H
+
+#define SENSOR_COUNT 2U
+
+/* --- Pinbelegung (BCM) -------------------------------------------------- */
+#define PIN_SONAR1_TRIG 23U /* Pin 16 */
+#define PIN_SONAR1_ECHO 24U /* Pin 18, ueber Spannungsteiler */
+#define PIN_SONAR2_TRIG 17U /* Pin 11 */
+#define PIN_SONAR2_ECHO 27U /* Pin 13, ueber Spannungsteiler */
+#define PIN_MOTOR_PWMA  18U /* Pin 12, Hardware-PWM0 */
+#define PIN_MOTOR_STBY  25U /* Pin 22, "Enable", externer Pull-down */
+#define PIN_MOTOR_AIN1  22U /* Pin 15 */
+#define PIN_MOTOR_AIN2  16U /* Pin 36 */
+
+/* --- Sensor-Threads ------------------------------------------------------ */
+/* Beide Sensoren messen mit gleicher Periode, aber um eine halbe Periode
+ * versetzt, damit sie sich nicht gegenseitig stoeren. */
+#define SENSOR_PERIOD_MS       60U
+#define SENSOR_PHASE_OFFSET_MS 30U
+/* Festes Messfenster nach dem Trigger (Software-Timeout fuer das Echo).
+ * 400 cm entsprechen ca. 23,3 ms Echo. */
+#define SENSOR_ECHO_WINDOW_MS  25U
+/* Gemeinsamer Startzeitpunkt beider Sensor-Threads: so lange nach dem Start
+ * der Threads beginnt Sensor 1, Sensor 2 um SENSOR_PHASE_OFFSET_MS spaeter. */
+#define SENSOR_START_DELAY_MS  20U
+#define SONAR_TRIGGER_PULSE_US 10U
+/* Schallgeschwindigkeit 343 m/s: d[mm] = t_echo[us] * 343 / 2000 */
+#define SONAR_MM_NUM 343U
+#define SONAR_MM_DEN 2000U
+
+/* --- Motor --------------------------------------------------------------- */
+#define MOTOR_PWM_FREQ_HZ 20000U
+/* VORLAEUFIG, nach SAF-10 am Aufbau festlegen: Tastverhaeltnis je Stufe in
+ * Promille (Ansteuerungsklassen, keine Drehzahl, siehe H5). */
+#define MOTOR_DUTY_LOW_PM    400U
+#define MOTOR_DUTY_MEDIUM_PM 650U
+#define MOTOR_DUTY_HIGH_PM   900U
+/* Motorsteuerung: spaetestens nach dieser Zeit wird der Ausgang neu bewertet. */
+#define MOTOR_REFRESH_MS 50U
+/* Aktualisiert die Safety-Logik ihren Zustand laenger nicht, schaltet die
+ * Motorsteuerung selbststaendig ab (Ueberwachung des Safety-Logik-Threads). */
+#define SAFETY_ALIVE_TIMEOUT_MS 150U
+
+/* --- Sicherheitsabstaende (SAF-07, SAF-08) -------------------------------- */
+/* VORLAEUFIG, nach SAF-10 am Aufbau festlegen (Reaktions- und Nachlaufzeit).
+ * Die Reihenfolge S_LOW < S_MEDIUM < S_HIGH wird beim Start geprueft. */
+#define PI2_S_LOW_MM    300U
+#define PI2_S_MEDIUM_MM 500U
+#define PI2_S_HIGH_MM   800U
+
+/* --- Testmodus (nur im Build mit SSM_TESTMODE) ----------------------------- */
+#define TESTLOG_FILE          "pi2_testlog.csv"
+#define TEST_RUN_MAX_SECONDS  600
+
+/* --- Hardware-Watchdog ---------------------------------------------------- */
+#define WATCHDOG_DEVICE    "/dev/watchdog"
+#define WATCHDOG_TIMEOUT_S 1
+/* Der Watchdog wird nur bedient, wenn die Motorsteuerung hoechstens so viele
+ * Zyklen der Safety-Logik zurueckliegt (1 Zyklus = 50 ms, also <= 100 ms). */
+#define WATCHDOG_MAX_MOTOR_LAG 1U
+/* Kommunikation: so lange wird nach SHUTDOWN auf "Motor AUS" gewartet, bevor
+ * das ACK entfaellt. */
+#define SHUTDOWN_MOTOR_WAIT_MS 500U
+
+/* --- Thread-Prioritaeten (SCHED_FIFO) ------------------------------------ */
+#define PRIO_SAFETY 80
+#define PRIO_MOTOR  70
+#define PRIO_SENSOR 60
+#define PRIO_COMM   40
+
+#endif /* PI2_CONFIG_H */
