@@ -199,6 +199,7 @@ static void handle_frame(connection_t *conn, comm_data_t *comm, const uint8_t *b
 {
     proto_frame_t frame;
     bool accepted = false;
+    bool invalid_command = false;
 
     /* Reihenfolge: Tag, Session-ID, Sequenznummer, Wertebereich (SEC-02). */
     if ((proto_decode(buf, len, &frame) == 0) &&
@@ -211,6 +212,8 @@ static void handle_frame(connection_t *conn, comm_data_t *comm, const uint8_t *b
             if (proto_level_valid(frame.payload[0])) {
                 comm->level = frame.payload[0];
                 accepted = true;
+            } else {
+                invalid_command = true; /* unbekannte Stufe */
             }
             break;
         case MSG_STOP:
@@ -219,6 +222,7 @@ static void handle_frame(connection_t *conn, comm_data_t *comm, const uint8_t *b
             break;
         default:
             /* STATUS/ACK sind in dieser Richtung nicht vorgesehen */
+            invalid_command = true;
             break;
         }
     }
@@ -229,6 +233,16 @@ static void handle_frame(connection_t *conn, comm_data_t *comm, const uint8_t *b
         shared_comm_write(comm);
     } else {
         conn->discarded++;
+        if (invalid_command) {
+            /* Abschnitt 2.6 "ungueltiger Befehl": Die Nachricht ist echt (Tag,
+             * Session-ID und Sequenznummer stimmen), ihr Inhalt aber ungueltig.
+             * Die letzte gueltige Nachricht wird sofort entwertet, damit die
+             * Safety-Logik im naechsten Zyklus FEHLER / KOMMUNIKATION setzt.
+             * Ein gesetztes Stop-Flag bleibt erhalten. */
+            comm->have_msg = false;
+            comm->last_valid_us = 0U;
+            shared_comm_write(comm);
+        }
     }
 }
 

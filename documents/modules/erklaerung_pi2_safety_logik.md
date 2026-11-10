@@ -35,9 +35,12 @@ noch auf die Uhr oder auf gemeinsame Daten zu und lässt sich deshalb vollständ
 - **Kein Speichern von Fehlern.** Der Zustand wird in jedem Zyklus neu bestimmt. Sind alle Bedingungen
   erfüllt, läuft der Motor ohne Quittierung wieder an (SAF-11, Abschnitt 2.6).
 - **SHUTDOWN bleibt.** `ctx->shutdown` wird nie zurückgesetzt.
-- **P3 zählt Messzyklen, nicht Safety-Zyklen.** Jeder Messwert trägt einen Zähler `seq`. P3 wird nur
-  bewertet, wenn beide Sensoren einen neuen, gültigen Wert geliefert haben. Zwei Bewertungen mit mehr als
-  5 cm Abweichung hintereinander verletzen P3, eine Bewertung ohne Abweichung setzt den Zähler zurück.
+- **P3 zählt neue Messwerte, nicht Safety-Zyklen** (Klarstellung 5 im Auftrag). Jeder Messwert trägt einen
+  Zähler `seq`. P3 wird nur bewertet, wenn beide Werte gültig sind und seit der letzten Bewertung mindestens
+  ein Sensor einen neuen Wert geliefert hat. Zwei Bewertungen mit mehr als 5 cm Abweichung hintereinander
+  verletzen P3, eine Bewertung ohne Abweichung setzt den Zähler zurück.
+- **Die Sicherheitsabstände stehen in `pi2_config.h`** und sind vorläufig: 30, 50 und 80 cm. Beim Start prüft
+  `safety_config_valid()`, dass sie mit der Stufe wachsen. Sonst startet das Programm nicht.
 - **Das Alter der Nachricht berechnet die Safety-Logik selbst** aus `comm_data.last_valid_us`. Hängt der
   Kommunikations-Thread, altert der Zeitstempel und es folgt FEHLER / KOMMUNIKATION.
 - **Ungültige Zeiten gelten als veraltet.** `time_age_us()` liefert den größtmöglichen Wert, wenn ein
@@ -64,10 +67,25 @@ Nach dem Reset sind die GPIOs Eingänge, und der Pull-down an STBY schaltet den 
 - Die Grenzen sind einschließlich: genau 300 ms, genau 150 ms, genau 5 cm und d_min = S sind noch zulässig.
 - Reaktionszeit bei Kommunikationsverlust: 300 ms Timeout plus höchstens ein Zyklus von 50 ms (SAF-05).
 - Ein hängender Sensor-Thread lässt `valid` auf `true` stehen. Erkannt wird er über das Datenalter (P4).
-- Der Auftrag `pi2_agent_prompt.md` legt P3 anders fest (Bewertung, sobald ein Sensor einen neuen Wert
-  hat). Siehe Abgleich im [Überblick](erklaerung_pi2_ueberblick.md).
+- Weil abwechselnd alle 30 ms ein neuer Messwert eintrifft, bewertet praktisch jeder Zyklus der Safety-Logik
+  P3. Eine dauerhafte Abweichung führt deshalb nach zwei Zyklen zum Fehler, also nach rund 50 bis 100 ms.
+- Zählt eine Nachricht von Pi 1 als ungültiger Befehl, entwertet die Kommunikation `comm_data` sofort. Die
+  Safety-Logik sieht dann „keine Nachricht“ und setzt FEHLER / KOMMUNIKATION, ohne den Timeout abzuwarten.
+
+## Überwachung der Zykluszeit
+
+Der Thread misst in jedem Zyklus, wie viel später als geplant er begonnen hat, und merkt sich den größten
+Wert (`max_late_us`). Dauert ein Zyklus länger als die Periode, erhöht er `overruns`. Beide Werte stehen in
+`safety_state`. Im Testmodus gibt das Hauptprogramm sie aus und schreibt sie ins Test-Log (SAF-06).
+
+## Nachlaufmessung im Testmodus
+
+Mit dem Befehl `run <1|2|3> <s>` ersetzt `pi2_app_test` für die gewählte Dauer den Befehl von Pi 1 durch die
+angegebene Stufe. Alle Sensorprüfungen und der Sicherheitsabstand bleiben aktiv. Nach Ablauf folgt
+FEHLER / KOMMUNIKATION und Motor AUS. Der Zeitpunkt steht im Test-Log, sodass sich die Nachlaufzeit des
+Rotors dagegen messen lässt (SAF-10). `safety_evaluate()` ist im Testmodus unverändert.
 
 ## Tests
 
 `tests/test_pi2.c` prüft jede Zeile der Tabelle oben, die Grenzwerte, die Reihenfolge der Fehlercodes, den
-Wiederanlauf und alle drei Stufen. Aufruf: `ctest --output-on-failure` im Build-Verzeichnis.
+Wiederanlauf, alle drei Stufen, P3 mit einzeln eintreffenden Messwerten und die Watchdog-Bedingung. Aufruf: `ctest --output-on-failure` im Build-Verzeichnis.

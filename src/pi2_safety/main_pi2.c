@@ -2,10 +2,13 @@
  * main_pi2.c - Raspberry Pi 2: Sensorerfassung, Safety-Logik, Motorsteuerung.
  *
  * Aufruf:
- *   pi2_app [--tcp PORT] [--test] [--no-watchdog]
+ *   pi2_app [--tcp PORT] [--no-watchdog]
  *     --tcp PORT     TCP auf 127.0.0.1 statt Bluetooth-RFCOMM (Entwicklung)
- *     --test         Testmodus: Fehlereinspeisung ueber die Konsole (stdin)
  *     --no-watchdog  Hardware-Watchdog nicht verwenden (nur Entwicklung)
+ *
+ * Testmodus: Wird mit SSM_TESTMODE gebaut (Ziel pi2_app_test), nimmt das
+ * Programm Befehle zur Fehlereinspeisung auf der Standardeingabe an und
+ * schreibt ein Test-Log. Im normalen Build ist dieser Code nicht enthalten.
  *
  * Ablauf (SAF-02, SAF-09): Motor AUS -> Initialisierung -> Threads starten ->
  * Zustandswechsel protokollieren -> bei Stop/Shutdown zuerst Motor AUS, dann
@@ -54,16 +57,20 @@ typedef struct {
     int32_t priority;
     const char_t *name;
     bool started;
+    bool realtime; /* SCHED_FIFO gesetzt */
 } thread_desc_t;
 
 typedef struct {
     bt_server_cfg_t comm;
-    bool test_mode;
     bool use_watchdog;
 } options_t;
 
 static volatile sig_atomic_t g_signal_received = 0;
 static const uint32_t g_sensor_index[SENSOR_COUNT] = { 0U, 1U };
+
+#ifdef SSM_TESTMODE
+static FILE *g_testlog = NULL; /* nur vom Hauptprogramm verwendet */
+#endif
 
 /* Signatur durch <signal.h> vorgegeben (Dir 4.6: Bibliotheksschnittstelle). */
 static void on_terminate(int signum)
@@ -147,8 +154,23 @@ static void log_state(const safety_state_t *state)
                  s1.valid ? s1.distance_mm : (uint16_t)DIST_INVALID_MM,
                  comm.last_valid_us / TIME_US_PER_MS, comm.last_valid_us % TIME_US_PER_MS);
     (void)fflush(stdout);
+
+#ifdef SSM_TESTMODE
+    /* Abschnitt 2.10: Test-Log mit der monotonen Uhr von Pi 2 (Zeiten in us). */
+    if (g_testlog != NULL) {
+        (void)fprintf(g_testlog,
+                      "%" PRIu64 ",%s,%s,%s,%" PRIu16 ",%" PRIu16 ",%" PRIu64 ",%" PRIu32 ",%" PRIu64 "\n",
+                      state->state_since_us, state_name(state->state), error_name(state->error),
+                      level_name(state->motor_level),
+                      s0.valid ? s0.distance_mm : (uint16_t)DIST_INVALID_MM,
+                      s1.valid ? s1.distance_mm : (uint16_t)DIST_INVALID_MM,
+                      comm.last_valid_us, state->overruns, state->max_late_us);
+        (void)fflush(g_testlog);
+    }
+#endif
 }
 
+#ifdef SSM_TESTMODE
 static void print_console_help(void)
 {
     (void)printf("Testkonsole:\n"
@@ -156,6 +178,8 @@ static void print_console_help(void)
                  "  force <1|2> <mm>  Rohmesswert des Sensors ersetzen (TC-01a/b, TC-02)\n"
                  "  unforce <1|2>     Vorgabe aufheben\n"
                  "  block <1|2> <ms>  Sensor-Thread einmalig blockieren (TC-04)\n"
+                 "  run <1|2|3> <s>   Stufe LOW/MEDIUM/HIGH fuer s Sekunden ohne Pi 1 freigeben,\n"
+                 "                    danach Motor AUS (Nachlaufmessung, SAF-10)\n"
                  "  stop              lokaler Stop/Shutdown\n");
     (void)fflush(stdout);
 }
@@ -183,11 +207,36 @@ static void handle_console_line(const char_t *line)
             sensors_test_force(sensor - 1U, -1);
         } else if ((strcmp(cmd, "block") == 0) && sensor_ok && value_ok) {
             sensors_test_block(sensor - 1U, (uint32_t)value);
+        } else if ((strcmp(cmd, "run") == 0) && (fields >= 3) && (sensor >= LEVEL_LOW) &&
+                   (sensor <= LEVEL_HIGH) && (value > 0) && (value <= TEST_RUN_MAX_SECONDS)) {
+            /* zweites Feld ist hier die Stufe, drittes die Dauer in Sekunden */
+            safety_test_run((uint8_t)sensor, (uint32_t)value * 1000U);
         } else {
             print_console_help();
         }
     }
 }
+
+/* Oeffnet das Test-Log; ohne Datei laeuft der Test mit Konsolenausgabe weiter. */
+static void open_testlog(void)
+{
+    g_testlog = fopen(TESTLOG_FILE, "w");
+    if (g_testlog == NULL) {
+        (void)fprintf(stderr, "Warnung: Test-Log %s konnte nicht angelegt werden\n", TESTLOG_FILE);
+    } else {
+        (void)fprintf(g_testlog, "state_since_us,state,error,motor,d1_mm,d2_mm,"
+                                 "last_valid_msg_us,overruns,max_late_us\n");
+    }
+}
+
+static void close_testlog(void)
+{
+    if ((g_testlog != NULL) && (fclose(g_testlog) != 0)) {
+        (void)fprintf(stderr, "Warnung: Test-Log nicht vollstaendig geschrieben\n");
+    }
+    g_testlog = NULL;
+}
+#endif /* SSM_TESTMODE */
 
 /* Wandelt eine Portnummer; false bei ungueltiger Eingabe. */
 static bool parse_port(const char_t *text, uint16_t *port)
@@ -217,7 +266,6 @@ static bool parse_options(int32_t argc, char_t *const argv[], options_t *options
 
     options->comm.use_tcp = false;
     options->comm.tcp_port = 0U;
-    options->test_mode = false;
     options->use_watchdog = true;
 
     while (ok && (a < argc)) {
@@ -225,9 +273,6 @@ static bool parse_options(int32_t argc, char_t *const argv[], options_t *options
             ok = parse_port(argv[a + 1], &options->comm.tcp_port);
             options->comm.use_tcp = ok;
             a += 2;
-        } else if (strcmp(argv[a], "--test") == 0) {
-            options->test_mode = true;
-            a += 1;
         } else if (strcmp(argv[a], "--no-watchdog") == 0) {
             options->use_watchdog = false;
             a += 1;
@@ -259,11 +304,7 @@ static void start_thread(thread_desc_t *desc)
         desc->started = true;
         (void)memset(&param, 0, sizeof(param));
         param.sched_priority = desc->priority;
-        if (pthread_setschedparam(desc->handle, SCHED_FIFO, &param) != 0) {
-            (void)fprintf(stderr, "Warnung: SCHED_FIFO fuer Thread '%s' nicht moeglich "
-                                  "(root noetig); Zeitverhalten nicht garantiert\n",
-                          desc->name);
-        }
+        desc->realtime = (pthread_setschedparam(desc->handle, SCHED_FIFO, &param) == 0);
     } else {
         (void)fprintf(stderr, "Fehler: Thread '%s' konnte nicht gestartet werden\n", desc->name);
     }
@@ -273,16 +314,20 @@ static void start_thread(thread_desc_t *desc)
 int main(int argc, char **argv)
 {
     thread_desc_t threads[] = {
-        { 0, safety_thread, NULL, PRIO_SAFETY, "safety", false },
-        { 0, motor_thread, NULL, PRIO_MOTOR, "motor", false },
-        { 0, sensor_thread, (void *)&g_sensor_index[0], PRIO_SENSOR, "sensor1", false },
-        { 0, sensor_thread, (void *)&g_sensor_index[1], PRIO_SENSOR, "sensor2", false },
-        { 0, bt_server_thread, NULL, PRIO_COMM, "comm", false },
+        { 0, safety_thread, NULL, PRIO_SAFETY, "safety", false, false },
+        { 0, motor_thread, NULL, PRIO_MOTOR, "motor", false, false },
+        { 0, sensor_thread, (void *)&g_sensor_index[0], PRIO_SENSOR, "sensor1", false, false },
+        { 0, sensor_thread, (void *)&g_sensor_index[1], PRIO_SENSOR, "sensor2", false, false },
+        { 0, bt_server_thread, NULL, PRIO_COMM, "comm", false, false },
     };
     const size_t thread_count = sizeof(threads) / sizeof(threads[0]);
     options_t options;
+#ifdef SSM_TESTMODE
     bool stdin_open = false;
+    uint32_t logged_overruns = 0U;
+#endif
     bool all_started = true;
+    bool all_realtime = true;
     bool running = true;
     uint32_t logged_transitions = 0U;
     uint32_t logged_off_failures = 0U;
@@ -291,7 +336,20 @@ int main(int argc, char **argv)
     size_t i;
 
     if (!parse_options(argc, argv, &options)) {
-        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--test] [--no-watchdog]\n", argv[0]);
+        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--no-watchdog]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+    /* SAF-07: Die Sicherheitsabstaende muessen mit der Stufe wachsen. */
+    if (!safety_config_valid()) {
+        (void)fprintf(stderr, "Fehler: Konfiguration ungueltig, verlangt ist "
+                              "0 < S_LOW < S_MEDIUM < S_HIGH (pi2_config.h)\n");
+        return EXIT_FAILURE;
+    }
+    /* Reale Hardware braucht Root-Rechte (GPIO, SCHED_FIFO, mlockall, Watchdog).
+     * Ohne sie wird nicht gestartet; die Ausgaenge bleiben unberuehrt. */
+    if (!hal_is_simulation() && (geteuid() != 0)) {
+        (void)fprintf(stderr, "Fehler: Root-Rechte noetig (Start mit sudo). "
+                              "Das Programm wurde nicht gestartet, der Motor bleibt AUS.\n");
         return EXIT_FAILURE;
     }
 
@@ -318,24 +376,34 @@ int main(int argc, char **argv)
     }
     /* Speicher sperren (keine Verzoegerung durch Auslagern). Nur mit root:
      * ohne root wuerde das Limit RLIMIT_MEMLOCK spaetere Allokationen
-     * (z. B. Thread-Stacks) fehlschlagen lassen. */
+     * (z. B. Thread-Stacks) fehlschlagen lassen. Auf realer Hardware ist ein
+     * Fehlschlag ein Startfehler, in der Simulation nur eine Warnung. */
     if ((geteuid() != 0) || (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)) {
-        (void)fprintf(stderr, "Warnung: Speicher nicht gesperrt (mlockall, root noetig)\n");
-    }
-
-    sensors_set_test_mode(options.test_mode);
-    (void)printf("Pi 2 gestartet: HAL=%s, Transport=%s%s\n", hal_name(),
-                 options.comm.use_tcp ? "TCP" : "RFCOMM",
-                 options.test_mode ? ", Testmodus" : "");
-    if (options.test_mode) {
-        print_console_help();
-        /* Ungepuffert, damit poll() auf stdin keine bereits gelesenen Zeilen uebersieht. */
-        if (setvbuf(stdin, NULL, _IONBF, 0) == 0) {
-            stdin_open = true;
+        if (hal_is_simulation()) {
+            (void)fprintf(stderr, "Warnung: Speicher nicht gesperrt (mlockall, root noetig)\n");
         } else {
-            (void)fprintf(stderr, "Warnung: Testkonsole nicht verfuegbar\n");
+            (void)fprintf(stderr, "Fehler: Speicher konnte nicht gesperrt werden (mlockall)\n");
+            bt_server_close();
+            if (hal_shutdown() != 0) {
+                (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
+            }
+            return EXIT_FAILURE;
         }
     }
+
+    (void)printf("Pi 2 gestartet: HAL=%s, Transport=%s\n", hal_name(),
+                 options.comm.use_tcp ? "TCP" : "RFCOMM");
+#ifdef SSM_TESTMODE
+    (void)printf("TESTMODUS: Fehlereinspeisung aktiv, nicht fuer den normalen Betrieb\n");
+    print_console_help();
+    open_testlog();
+    /* Ungepuffert, damit poll() auf stdin keine bereits gelesenen Zeilen uebersieht. */
+    if (setvbuf(stdin, NULL, _IONBF, 0) == 0) {
+        stdin_open = true;
+    } else {
+        (void)fprintf(stderr, "Warnung: Testkonsole nicht verfuegbar\n");
+    }
+#endif
 
     /* Hardware-Watchdog: direkt vor dem Start der Threads oeffnen, damit die
      * Safety-Logik ihn sofort bedient. In der Simulation gibt es keinen. */
@@ -357,15 +425,31 @@ int main(int argc, char **argv)
         (void)printf("Hardware-Watchdog: aktiv, Timeout %" PRId32 " s\n", (int32_t)WATCHDOG_TIMEOUT_S);
     }
 
-    /* 2. Threads starten. */
+    /* 2. Threads starten. Beide Sensor-Threads erhalten denselben Startzeitpunkt. */
+    sensors_set_start_time(time_now_us() + ((uint64_t)SENSOR_START_DELAY_MS * TIME_US_PER_MS));
     for (i = 0U; i < thread_count; i++) {
         start_thread(&threads[i]);
         all_started = all_started && threads[i].started;
+        all_realtime = all_realtime && threads[i].realtime;
     }
     if (!all_started) {
         shared_request_stop();
         exit_code = EXIT_FAILURE;
         running = false;
+    } else if (!all_realtime) {
+        if (hal_is_simulation()) {
+            (void)fprintf(stderr, "Warnung: SCHED_FIFO nicht moeglich (root noetig); "
+                                  "Zeitverhalten nicht garantiert\n");
+        } else {
+            /* Ohne Echtzeit-Prioritaet ist der 50-ms-Zyklus nicht gesichert. */
+            (void)fprintf(stderr, "Fehler: SCHED_FIFO konnte nicht gesetzt werden; "
+                                  "das Programm wird mit Motor AUS beendet\n");
+            shared_request_stop();
+            exit_code = EXIT_FAILURE;
+            running = false;
+        }
+    } else {
+        /* alle Threads laufen mit SCHED_FIFO */
     }
 
     /* 3. Hauptschleife: Zustandswechsel protokollieren, Testkonsole bedienen. */
@@ -373,6 +457,7 @@ int main(int argc, char **argv)
         safety_state_t state;
         uint32_t off_failures;
 
+#ifdef SSM_TESTMODE
         if (stdin_open) {
             struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
 
@@ -387,6 +472,9 @@ int main(int argc, char **argv)
         } else {
             time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
         }
+#else
+        time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
+#endif
 
         if ((g_signal_received != 0) && (signal_since_us == 0U)) {
             shared_request_stop();
@@ -406,6 +494,15 @@ int main(int argc, char **argv)
             logged_transitions = state.transitions;
             log_state(&state);
         }
+#ifdef SSM_TESTMODE
+        /* Zyklusueberschreitungen der Safety-Logik melden (SAF-06) */
+        if (state.overruns != logged_overruns) {
+            logged_overruns = state.overruns;
+            (void)printf("Safety-Logik: %" PRIu32 " Zyklusueberschreitung(en), groesste Verspaetung "
+                         "%" PRIu64 " us\n", state.overruns, state.max_late_us);
+            log_state(&state);
+        }
+#endif
         if (state.state == STATE_SHUTDOWN) {
             running = false;
         } else if ((signal_since_us != 0U) &&
@@ -438,6 +535,17 @@ int main(int argc, char **argv)
         }
     }
     bt_server_close();
+#ifdef SSM_TESTMODE
+    {
+        safety_state_t final_state;
+
+        shared_state_read(&final_state);
+        (void)printf("Safety-Logik: %" PRIu32 " Zyklen, %" PRIu32 " Ueberschreitung(en), "
+                     "groesste Verspaetung %" PRIu64 " us\n",
+                     final_state.generation, final_state.overruns, final_state.max_late_us);
+        close_testlog();
+    }
+#endif
     if ((hal_motor_off() != 0) || (hal_shutdown() != 0) || (motor_off_failures() != 0U)) {
         /* Der Watchdog bleibt absichtlich offen: Ohne "Magic Close" setzt er
          * den Pi nach dem Programmende zurueck und der Motor wird stromlos. */

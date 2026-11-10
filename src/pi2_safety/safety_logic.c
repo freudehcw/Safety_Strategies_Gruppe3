@@ -7,9 +7,11 @@
  */
 #include "safety_logic.h"
 
+#include <stdatomic.h>
 #include <stddef.h>
 
 #include "config.h"
+#include "pi2_config.h"
 #include "protocol.h"
 #include "time_utils.h"
 #include "watchdog.h"
@@ -33,13 +35,13 @@ uint16_t safety_distance_mm(uint8_t level)
 
     switch (level) {
     case LEVEL_LOW:
-        distance = (uint16_t)CFG_S_LOW_MM;
+        distance = (uint16_t)PI2_S_LOW_MM;
         break;
     case LEVEL_MEDIUM:
-        distance = (uint16_t)CFG_S_MEDIUM_MM;
+        distance = (uint16_t)PI2_S_MEDIUM_MM;
         break;
     case LEVEL_HIGH:
-        distance = (uint16_t)CFG_S_HIGH_MM;
+        distance = (uint16_t)PI2_S_HIGH_MM;
         break;
     default:
         distance = 0U; /* ungueltige Stufe: kein Default-Betrieb */
@@ -48,16 +50,27 @@ uint16_t safety_distance_mm(uint8_t level)
     return distance;
 }
 
+bool safety_config_valid(void)
+{
+    uint16_t s_low = safety_distance_mm(LEVEL_LOW);
+    uint16_t s_medium = safety_distance_mm(LEVEL_MEDIUM);
+    uint16_t s_high = safety_distance_mm(LEVEL_HIGH);
+
+    return (s_low > 0U) && (s_low < s_medium) && (s_medium < s_high);
+}
+
 /*
- * P3: Quervergleich. Bewertet wird einmal je Messzyklus, d. h. sobald beide
- * Sensoren einen neuen, gueltigen Messwert geliefert haben. Zyklen mit einem
- * ungueltigen Messwert lassen den Zaehler unveraendert (sie fuehren ohnehin
- * zu FEHLER / SENSOR).
+ * P3: Quervergleich. Bewertet wird nur, wenn beide Messwerte gueltig sind und
+ * seit der letzten Bewertung mindestens ein Sensor einen neuen Wert geliefert
+ * hat (Messzaehler seq). Abweichung > 5 cm erhoeht den Zaehler, sonst wird er
+ * zurueckgesetzt; ab 2 gilt P3 als verletzt. Zyklen mit einem ungueltigen
+ * Messwert lassen den Zaehler unveraendert (sie fuehren ohnehin zu
+ * FEHLER / SENSOR).
  */
 static void update_cross_check(safety_ctx_t *ctx, const sensor_data_t sensors[SENSOR_COUNT])
 {
     if (sensors[0].valid && sensors[1].valid &&
-        (sensors[0].seq != ctx->last_seq[0]) && (sensors[1].seq != ctx->last_seq[1])) {
+        ((sensors[0].seq != ctx->last_seq[0]) || (sensors[1].seq != ctx->last_seq[1]))) {
         uint16_t d0 = sensors[0].distance_mm;
         uint16_t d1 = sensors[1].distance_mm;
         uint16_t diff = (d0 >= d1) ? (uint16_t)(d0 - d1) : (uint16_t)(d1 - d0);
@@ -147,11 +160,25 @@ bool safety_motor_up_to_date(uint32_t last_generation, const motor_status_t *sta
     return up_to_date;
 }
 
+#ifdef SSM_TESTMODE
+static _Atomic uint8_t g_test_level;
+static _Atomic uint64_t g_test_until_us;
+
+void safety_test_run(uint8_t level, uint32_t duration_ms)
+{
+    if (proto_level_valid(level)) {
+        atomic_store(&g_test_level, level);
+        atomic_store(&g_test_until_us,
+                     time_now_us() + ((uint64_t)duration_ms * TIME_US_PER_MS));
+    }
+}
+#endif
+
 void *safety_thread(void *arg)
 {
     const uint64_t period_us = (uint64_t)CFG_SAFETY_PERIOD_MS * TIME_US_PER_MS;
     safety_ctx_t ctx;
-    safety_state_t state = { STATE_INIT, ERR_NONE, LEVEL_OFF, 0U, 0U, 0U, 0U };
+    safety_state_t state = { STATE_INIT, ERR_NONE, LEVEL_OFF, 0U, 0U, 0U, 0U, 0U, 0U };
     uint64_t next_us = time_now_us();
 
     (void)arg;
@@ -165,6 +192,12 @@ void *safety_thread(void *arg)
         safety_decision_t decision;
         uint64_t now_us;
         uint32_t i;
+
+        /* Verspaetung des Zyklusbeginns gegenueber dem geplanten Zeitpunkt (SAF-06) */
+        now_us = time_now_us();
+        if ((now_us > next_us) && ((now_us - next_us) > state.max_late_us)) {
+            state.max_late_us = now_us - next_us;
+        }
 
         /* Watchdog nur bedienen, wenn die Motorsteuerung die letzte Freigabe
          * umgesetzt hat. Haengt einer der beiden Threads, setzt der Watchdog
@@ -185,6 +218,15 @@ void *safety_thread(void *arg)
         /* Zeit nach den Snapshots nehmen: Zeitstempel liegen nie in der Zukunft. */
         now_us = time_now_us();
 
+#ifdef SSM_TESTMODE
+        /* Nachlaufmessung: Befehl von Pi 1 fuer die gewaehlte Dauer ersetzen */
+        if (now_us < atomic_load(&g_test_until_us)) {
+            comm.level = atomic_load(&g_test_level);
+            comm.have_msg = true;
+            comm.last_valid_us = now_us;
+        }
+#endif
+
         safety_evaluate(&ctx, sensors, &comm, shared_stop_requested(), now_us, &decision);
 
         if ((decision.state != state.state) || (decision.error != state.error) ||
@@ -202,6 +244,7 @@ void *safety_thread(void *arg)
         next_us += period_us;
         now_us = time_now_us();
         if (next_us <= now_us) {
+            state.overruns++;             /* wird mit dem naechsten Zustand gemeldet */
             next_us = now_us + period_us; /* Zyklus ueberschritten: neu aufsetzen */
         }
         time_sleep_until_us(next_us);

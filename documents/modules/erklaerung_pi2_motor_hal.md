@@ -63,7 +63,10 @@ Die Safety-Logik, die Sensorprüfungen und die Motorsteuerung sind in beiden Var
 - `hal_pigpio.c` wurde bisher nur gegen einen nachgebauten Header auf Syntax geprüft. Gebaut und getestet
   werden muss die Datei am Raspberry Pi.
 - Motor AUS heißt nicht Stillstand. Der Rotor läuft nach (H4). Die Nachlaufzeit muss am Aufbau gemessen
-  werden und bestimmt die Sicherheitsabstände (SAF-10).
+  werden und bestimmt die Sicherheitsabstände (SAF-10). Dafür gibt es in `pi2_app_test` den Befehl
+  `run <1|2|3> <s>`: Der Motor läuft für die gewählte Dauer mit der Stufe und wird dann abgeschaltet, der
+  Zeitpunkt steht im Test-Log.
+- Die Tastverhältnisse und die Sicherheitsabstände in `pi2_config.h` sind vorläufig.
 - Hardware-PWM läuft unabhängig vom Prozess weiter. Endet der Prozess, ohne die Ausgänge zurückzusetzen,
   bliebe der Motor an. Dagegen wirkt nur der Hardware-Watchdog (siehe unten), und der ist mit
   `--no-watchdog` abgeschaltet.

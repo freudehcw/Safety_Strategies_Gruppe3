@@ -26,8 +26,12 @@
  * versetzt, damit sie sich nicht gegenseitig stoeren. */
 #define SENSOR_PERIOD_MS       60U
 #define SENSOR_PHASE_OFFSET_MS 30U
-/* Festes Messfenster nach dem Trigger. 400 cm entsprechen ca. 23,3 ms Echo. */
-#define SENSOR_ECHO_WINDOW_MS  30U
+/* Festes Messfenster nach dem Trigger (Software-Timeout fuer das Echo).
+ * 400 cm entsprechen ca. 23,3 ms Echo. */
+#define SENSOR_ECHO_WINDOW_MS  25U
+/* Gemeinsamer Startzeitpunkt beider Sensor-Threads: so lange nach dem Start
+ * der Threads beginnt Sensor 1, Sensor 2 um SENSOR_PHASE_OFFSET_MS spaeter. */
+#define SENSOR_START_DELAY_MS  20U
 #define SONAR_TRIGGER_PULSE_US 10U
 /* Schallgeschwindigkeit 343 m/s: d[mm] = t_echo[us] * 343 / 2000 */
 #define SONAR_MM_NUM 343U
@@ -35,8 +39,8 @@
 
 /* --- Motor --------------------------------------------------------------- */
 #define MOTOR_PWM_FREQ_HZ 20000U
-/* Tastverhaeltnis je Stufe in Promille (Ansteuerungsklassen, keine Drehzahl,
- * siehe H5). Am Aufbau anpassen. */
+/* VORLAEUFIG, nach SAF-10 am Aufbau festlegen: Tastverhaeltnis je Stufe in
+ * Promille (Ansteuerungsklassen, keine Drehzahl, siehe H5). */
 #define MOTOR_DUTY_LOW_PM    400U
 #define MOTOR_DUTY_MEDIUM_PM 650U
 #define MOTOR_DUTY_HIGH_PM   900U
@@ -45,6 +49,17 @@
 /* Aktualisiert die Safety-Logik ihren Zustand laenger nicht, schaltet die
  * Motorsteuerung selbststaendig ab (Ueberwachung des Safety-Logik-Threads). */
 #define SAFETY_ALIVE_TIMEOUT_MS 150U
+
+/* --- Sicherheitsabstaende (SAF-07, SAF-08) -------------------------------- */
+/* VORLAEUFIG, nach SAF-10 am Aufbau festlegen (Reaktions- und Nachlaufzeit).
+ * Die Reihenfolge S_LOW < S_MEDIUM < S_HIGH wird beim Start geprueft. */
+#define PI2_S_LOW_MM    300U
+#define PI2_S_MEDIUM_MM 500U
+#define PI2_S_HIGH_MM   800U
+
+/* --- Testmodus (nur im Build mit SSM_TESTMODE) ----------------------------- */
+#define TESTLOG_FILE          "pi2_testlog.csv"
+#define TEST_RUN_MAX_SECONDS  600
 
 /* --- Hardware-Watchdog ---------------------------------------------------- */
 #define WATCHDOG_DEVICE    "/dev/watchdog"

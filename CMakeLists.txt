@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_definitions(-D_GNU_SOURCE)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(-Wall -Wextra -Wpedantic -Wshadow)
+    add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Werror)
 endif()
 
 # Konfigurierbare App-Namen
@@ -71,8 +71,10 @@ target_include_directories(common PUBLIC src/common)
 # ---------------------------------------------------------------
 # Raspberry Pi 2 (Safety/Steuerung)
 # ---------------------------------------------------------------
-# Hardwareunabhängiger Teil (wird auch von den Unit-Tests verwendet)
-add_library(pi2_core STATIC
+# Hardwareunabhängiger Teil (wird auch von den Unit-Tests verwendet).
+# Er wird zweimal gebaut: normal und mit SSM_TESTMODE (Fehlereinspeisung,
+# Test-Log). Im normalen Build ist kein Testcode enthalten.
+set(PI2_CORE_SRC
     src/pi2_safety/safety_logic.c
     src/pi2_safety/sensors.c
     src/pi2_safety/motor.c
@@ -80,25 +82,41 @@ add_library(pi2_core STATIC
     src/pi2_safety/shared.c
     src/pi2_safety/watchdog.c
 )
-target_include_directories(pi2_core PUBLIC src/pi2_safety)
-target_link_libraries(pi2_core PUBLIC common Threads::Threads)
-if(BLUEZ_FOUND)
-    target_compile_definitions(pi2_core PRIVATE HAVE_BLUEZ)
-    target_include_directories(pi2_core PRIVATE ${BLUEZ_INCLUDE_DIRS})
-    target_link_libraries(pi2_core PUBLIC ${BLUEZ_LIBRARIES})
-else()
+if(NOT BLUEZ_FOUND)
     message(WARNING "BlueZ nicht gefunden: Pi 2 kann nur mit --tcp gestartet werden.")
 endif()
 
-add_executable(${PI2_APP_NAME} src/pi2_safety/main_pi2.c)
-if(PI2_HAL_SELECTED STREQUAL "pigpio")
-    target_sources(${PI2_APP_NAME} PRIVATE src/pi2_safety/hal_pigpio.c)
-    target_include_directories(${PI2_APP_NAME} PRIVATE ${PIGPIO_INCLUDE_DIR})
-    target_link_libraries(${PI2_APP_NAME} ${PIGPIO_LIBRARY} rt)
-else()
-    target_sources(${PI2_APP_NAME} PRIVATE src/pi2_safety/hal_sim.c)
-endif()
-target_link_libraries(${PI2_APP_NAME} pi2_core)
+function(add_pi2_core name)
+    add_library(${name} STATIC ${PI2_CORE_SRC})
+    target_include_directories(${name} PUBLIC src/pi2_safety)
+    target_link_libraries(${name} PUBLIC common Threads::Threads)
+    if(BLUEZ_FOUND)
+        target_compile_definitions(${name} PRIVATE HAVE_BLUEZ)
+        target_include_directories(${name} PRIVATE ${BLUEZ_INCLUDE_DIRS})
+        target_link_libraries(${name} PUBLIC ${BLUEZ_LIBRARIES})
+    endif()
+endfunction()
+
+function(add_pi2_app name core)
+    add_executable(${name} src/pi2_safety/main_pi2.c)
+    if(PI2_HAL_SELECTED STREQUAL "pigpio")
+        target_sources(${name} PRIVATE src/pi2_safety/hal_pigpio.c)
+        target_include_directories(${name} PRIVATE ${PIGPIO_INCLUDE_DIR})
+        target_link_libraries(${name} ${PIGPIO_LIBRARY} rt)
+    else()
+        target_sources(${name} PRIVATE src/pi2_safety/hal_sim.c)
+    endif()
+    target_link_libraries(${name} ${core})
+endfunction()
+
+# Normaler Build
+add_pi2_core(pi2_core)
+add_pi2_app(${PI2_APP_NAME} pi2_core)
+
+# Testmodus (Designdokument Abschnitt 2.10, TC-01 bis TC-04, Nachlaufmessung)
+add_pi2_core(pi2_core_test)
+target_compile_definitions(pi2_core_test PUBLIC SSM_TESTMODE)
+add_pi2_app(${PI2_APP_NAME}_test pi2_core_test)
 
 # ---------------------------------------------------------------
 # Raspberry Pi 1 (Host/Bedienung) - wird gebaut, sobald der Quellcode existiert

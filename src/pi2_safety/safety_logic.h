@@ -33,6 +33,9 @@ void safety_ctx_init(safety_ctx_t *ctx);
 /* Sicherheitsabstand S zur Stufe in mm; 0 bei ungueltiger Stufe. */
 uint16_t safety_distance_mm(uint8_t level);
 
+/* Prueft die Konfiguration: 0 < S_LOW < S_MEDIUM < S_HIGH (SAF-07). */
+bool safety_config_valid(void);
+
 /*
  * Ein Zyklus der Safety-Logik. Pruefreihenfolge wie im Designdokument:
  *   1. Stop/Shutdown                         -> SHUTDOWN
@@ -54,5 +57,12 @@ void safety_evaluate(safety_ctx_t *ctx, const sensor_data_t sensors[SENSOR_COUNT
 bool safety_motor_up_to_date(uint32_t last_generation, const motor_status_t *status);
 
 void *safety_thread(void *arg);
+
+#ifdef SSM_TESTMODE
+/* Nachlaufmessung (SAF-10): ersetzt fuer duration_ms den Befehl von Pi 1 durch
+ * die Stufe level. Alle Sensorpruefungen und der Sicherheitsabstand bleiben
+ * aktiv; nach Ablauf folgt Motor AUS ueber den Kommunikations-Timeout. */
+void safety_test_run(uint8_t level, uint32_t duration_ms);
+#endif
 
 #endif /* SAFETY_LOGIC_H */

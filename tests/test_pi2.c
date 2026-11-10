@@ -3,6 +3,7 @@
  * Einzelpruefungen P1/P2, Safety-Logik (P3, P4, Zustaende, Wiederanlauf),
  * Motorstufen und Nachrichtenformat.
  *
+ * P2 und P3 folgen den Klarstellungen 4 und 5 aus pi2_agent_prompt.md.
  * Die Testnamen verweisen auf die Testfaelle TC-xx des Designdokuments.
  *
  * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
@@ -80,8 +81,9 @@ static void test_p1_range(void) /* TC-01, TC-01a */
     uint16_t mm = 0U;
 
     sensor_check_init(&ctx);
-    CHECK(!sensor_check_sample(&ctx, true, 1000U, MS(0) + 1U, &mm)); /* erste Messung: P2 nicht pruefbar */
-    CHECK(mm == DIST_INVALID_MM);
+    /* Erste Messung: kein Bezugswert, P2 wird nicht geprueft, Messung gilt */
+    CHECK(sensor_check_sample(&ctx, true, 1000U, MS(0) + 1U, &mm));
+    CHECK(mm == 1000U);
     CHECK(sensor_check_sample(&ctx, true, 1000U, MS(60), &mm));
     CHECK(mm == 1000U);
 
@@ -115,12 +117,18 @@ static void test_p2_rate(void) /* TC-01b */
     /* Bleibt der neue Wert stabil, ist die naechste Messung wieder gueltig */
     CHECK(sensor_check_sample(&ctx, true, 879U, MS(1240), &mm));
     CHECK(mm == 879U);
-    /* Nach einem ungueltigen Wert (P1) ist die erste Messung nicht pruefbar */
+    /* Nach einem ungueltigen Wert (P1) wird die naechste Messung nicht nach P2
+     * geprueft und gilt, auch bei grossem Abstand zum frueheren Wert */
     CHECK(!sensor_check_sample(&ctx, false, 0U, MS(1300), &mm));
-    CHECK(!sensor_check_sample(&ctx, true, 879U, MS(1360), &mm));
-    CHECK(sensor_check_sample(&ctx, true, 879U, MS(1420), &mm));
-    /* Gleicher Zeitstempel: nicht pruefbar */
+    CHECK(sensor_check_sample(&ctx, true, 2000U, MS(1360), &mm));
+    CHECK(mm == 2000U);
+    /* Danach gilt P2 wieder gegenueber diesem Wert */
     CHECK(!sensor_check_sample(&ctx, true, 879U, MS(1420), &mm));
+    /* Bezugswert ist die letzte Messung im Messbereich, auch wenn sie P2 verletzt hat */
+    CHECK(sensor_check_sample(&ctx, true, 879U, MS(1480), &mm));
+    CHECK(sensor_check_sample(&ctx, true, 879U, MS(1420) + MS(120), &mm));
+    /* Zeit nicht fortgeschritten: P2 nicht berechenbar, ungueltig */
+    CHECK(!sensor_check_sample(&ctx, true, 879U, MS(1420) + MS(120), &mm));
 }
 
 /* --- Safety-Logik ----------------------------------------------------------- */
@@ -231,6 +239,55 @@ static void test_cross_check(void) /* TC-02 */
     CHECK(d.state == STATE_BETRIEB);
 }
 
+/* P3 wird bewertet, sobald mindestens ein Sensor einen neuen Wert geliefert hat. */
+static void test_cross_check_single_update(void) /* TC-02 */
+{
+    safety_ctx_t ctx;
+    sensor_data_t s[SENSOR_COUNT];
+    comm_data_t c;
+    safety_decision_t d;
+    uint64_t now = T0;
+
+    safety_ctx_init(&ctx);
+    c = comm(LEVEL_LOW, now);
+
+    /* Beide neu, plausibel */
+    s[0] = sensor(1000U, true, now, 1U);
+    s[1] = sensor(1000U, true, now, 1U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(5), &d);
+    CHECK(d.state == STATE_BETRIEB);
+
+    /* Nur Sensor 2 neu, Abweichung > 5 cm: erste Abweichung, noch kein Fehler */
+    s[1] = sensor(1100U, true, now + MS(30), 2U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(35), &d);
+    CHECK(d.state == STATE_BETRIEB);
+    /* Kein neuer Wert: keine neue Bewertung */
+    safety_evaluate(&ctx, s, &c, false, now + MS(40), &d);
+    CHECK(d.state == STATE_BETRIEB);
+    /* Nur Sensor 1 neu, Abweichung besteht weiter: zweite Abweichung, Fehler */
+    s[0] = sensor(1000U, true, now + MS(60), 2U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(65), &d);
+    CHECK(d.state == STATE_FEHLER);
+    CHECK(d.error == ERR_SENSOR);
+    CHECK(d.motor_level == LEVEL_OFF);
+    /* Nur Sensor 2 neu und wieder plausibel: Zaehler zurueckgesetzt (SAF-11) */
+    s[1] = sensor(1010U, true, now + MS(90), 3U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(95), &d);
+    CHECK(d.state == STATE_BETRIEB);
+
+    /* Ein ungueltiger Messwert laesst den Zaehler unveraendert */
+    s[1] = sensor(1100U, true, now + MS(150), 4U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(155), &d);
+    CHECK(d.state == STATE_BETRIEB); /* erste Abweichung */
+    s[0] = sensor(DIST_INVALID_MM, false, now + MS(180), 3U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(185), &d);
+    CHECK(d.error == ERR_SENSOR);
+    s[0] = sensor(1000U, true, now + MS(240), 4U);
+    safety_evaluate(&ctx, s, &c, false, now + MS(245), &d);
+    CHECK(d.state == STATE_FEHLER); /* zweite Abweichung */
+    CHECK(d.error == ERR_SENSOR);
+}
+
 static void test_comm_timeout(void) /* TC-03 */
 {
     safety_ctx_t ctx;
@@ -274,6 +331,15 @@ static void test_comm_timeout(void) /* TC-03 */
     CHECK(d.error == ERR_KOMMUNIKATION);
     c = comm(LEVEL_OFF, now);
     safety_evaluate(&ctx, s, &c, false, now, &d);
+    CHECK(d.motor_level == LEVEL_OFF);
+
+    /* Entwertete Nachricht (authentisch, aber ungueltiger Inhalt): sofort Fehler,
+     * auch wenn der fruehere Zeitstempel noch frisch waere */
+    c = comm(LEVEL_LOW, 0U);
+    c.have_msg = false;
+    safety_evaluate(&ctx, s, &c, false, now, &d);
+    CHECK(d.state == STATE_FEHLER);
+    CHECK(d.error == ERR_KOMMUNIKATION);
     CHECK(d.motor_level == LEVEL_OFF);
 
     /* Zeitstempel in der Zukunft oder 0 gilt als veraltet */
@@ -321,6 +387,10 @@ static void test_object_stop(void) /* TC-05, TC-07 */
     uint64_t now = T0;
     size_t i;
 
+    CHECK(safety_config_valid());
+    CHECK(safety_distance_mm(LEVEL_LOW) == 300U);
+    CHECK(safety_distance_mm(LEVEL_MEDIUM) == 500U);
+    CHECK(safety_distance_mm(LEVEL_HIGH) == 800U);
     CHECK(safety_distance_mm(LEVEL_LOW) < safety_distance_mm(LEVEL_MEDIUM));
     CHECK(safety_distance_mm(LEVEL_MEDIUM) < safety_distance_mm(LEVEL_HIGH));
     CHECK(safety_distance_mm(LEVEL_OFF) == 0U);
@@ -354,10 +424,10 @@ static void test_object_stop(void) /* TC-05, TC-07 */
     }
 
     /* Abstand reicht fuer LOW, aber nicht fuer HIGH */
-    d = cycle(&ctx, (uint16_t)(CFG_S_LOW_MM + 10U), (uint16_t)(CFG_S_LOW_MM + 10U), LEVEL_LOW, now, seq);
+    d = cycle(&ctx, (uint16_t)(PI2_S_LOW_MM + 10U), (uint16_t)(PI2_S_LOW_MM + 10U), LEVEL_LOW, now, seq);
     CHECK(d.state == STATE_BETRIEB);
     seq++;
-    d = cycle(&ctx, (uint16_t)(CFG_S_LOW_MM + 10U), (uint16_t)(CFG_S_LOW_MM + 10U), LEVEL_HIGH,
+    d = cycle(&ctx, (uint16_t)(PI2_S_LOW_MM + 10U), (uint16_t)(PI2_S_LOW_MM + 10U), LEVEL_HIGH,
               now + MS(60), seq);
     CHECK(d.state == STATE_OBJEKT_STOPP);
 }
@@ -543,6 +613,7 @@ int main(void)
     test_startup_stays_safe();
     test_invalid_sensor();
     test_cross_check();
+    test_cross_check_single_update();
     test_comm_timeout();
     test_stale_data();
     test_object_stop();

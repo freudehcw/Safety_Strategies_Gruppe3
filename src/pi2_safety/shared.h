@@ -46,6 +46,8 @@ typedef struct {
     uint64_t state_since_us; /* letzter Wechsel von Zustand, Fehlercode oder Stufe */
     uint32_t generation;     /* wird in jedem Zyklus erhoeht */
     uint32_t transitions;    /* Anzahl dieser Wechsel */
+    uint32_t overruns;       /* Zyklen, die laenger als die Periode dauerten */
+    uint64_t max_late_us;    /* groesste Verspaetung eines Zyklusbeginns */
 } safety_state_t;
 
 /* Rueckmeldung der Motorsteuerung.

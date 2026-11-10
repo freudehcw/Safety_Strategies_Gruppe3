@@ -31,6 +31,8 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
    Typ oder falscher Länge wird die Verbindung abgebaut, weil der Datenstrom nicht mehr synchron ist.
 4. **Prüfung eines vollständigen Frames** in dieser Reihenfolge: Tag, Session-ID, Sequenznummer größer als
    die zuletzt akzeptierte, Wertebereich. Schlägt eine Prüfung fehl, wird die Nachricht verworfen und gezählt.
+   Stimmen Tag, Session-ID und Sequenznummer, ist aber der Inhalt ungültig (unbekannte Stufe oder ein Typ,
+   den nur Pi 2 sendet), gilt das als ungültiger Befehl: `comm_data` wird sofort entwertet.
 5. **Gültiger HEARTBEAT:** Stufe und Empfangszeit nach `comm_data`. **Gültiges STOP:** Stop-Flag setzen.
 6. **STATUS** alle 100 ms: Zustand, Fehlercode, aktive Stufe, d1, d2 (0xFFFF bei ungültigem Messwert).
 7. **SHUTDOWN:** Der Thread wartet, bis die Motorsteuerung in `motor_status` „Motor AUS“ für eine Generation
@@ -40,6 +42,10 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
 
 - **RFCOMM oder TCP:** Im Betrieb RFCOMM auf Kanal 1. Mit `--tcp PORT` lauscht Pi 2 auf `127.0.0.1`, damit
   sich das Programm ohne Bluetooth mit `tools/pi1_sim.py` testen lässt.
+- **Verwerfen oder Fehler?** Eine Nachricht mit falschem Tag, fremder Session-ID oder alter Sequenznummer
+  stammt nicht nachweislich von Pi 1 und wird nur verworfen. Eine echte Nachricht mit ungültigem Inhalt führt
+  im nächsten Zyklus der Safety-Logik zu FEHLER / KOMMUNIKATION (Klarstellung 6 im Auftrag, Abschnitt 2.6).
+  Der nächste gültige Heartbeat hebt den Fehler wieder auf. Ein gesetztes Stop-Flag bleibt erhalten.
 - **Die Sequenznummer wird nach bestandener Tag- und Session-Prüfung übernommen,** auch wenn der Inhalt
   danach ungültig ist. Dieselbe Nachricht kann so nicht noch einmal eingespielt werden.
 - **Sendefehler bauen die Verbindung ab.** Ein nur teilweise gesendeter Frame wäre für Pi 1 nicht mehr lesbar.
@@ -62,8 +68,8 @@ Umsetzung mit OpenSSL in `common/`.
 - Mit dem Platzhalter kann Pi 2 nicht mit einem Pi 1 sprechen, der schon AES-256-GCM verwendet.
 - Der Überlauf der Sequenznummer ist nicht durch einen automatischen Test abgedeckt. Er wurde einmal mit
   einem hochgesetzten Startwert nachgestellt.
-- Eine Nachricht mit ungültiger Stufe wird nur verworfen. Der Auftrag (Ergänzung 6) verlangt in diesem Fall
-  sofort FEHLER / KOMMUNIKATION.
+- Solange der CRC-Platzhalter verwendet wird, ist „echte Nachricht“ nur so gut wie die CRC. Die
+  Unterscheidung zwischen Verwerfen und Fehler wird erst mit AES-256-GCM belastbar.
 - Pi 1 sendet erst Heartbeats, wenn der Bediener eine Stufe gewählt hat. Bis dahin steht Pi 2 in
   FEHLER / KOMMUNIKATION. Das ist beabsichtigt.
 
@@ -71,4 +77,5 @@ Umsetzung mit OpenSSL in `common/`.
 
 `tests/test_pi2.c` prüft Roundtrip, Byte-Reihenfolge, jedes verfälschte Byte, falsche Längen und unbekannte
 Typen. Mit `tools/pi1_sim.py` lassen sich `pause`, `replay`, `corrupt`, `badlevel` und `stop` gegen ein
-laufendes Pi 2 ausführen (TC-03, TC-06, TC-08, TC-09).
+laufendes Pi 2 ausführen (TC-03, TC-06, TC-08, TC-09). Erwartet: `replay` und `corrupt` ändern den Zustand
+nicht, `badlevel` führt kurz zu FEHLER / KOMMUNIKATION.

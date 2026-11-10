@@ -8,9 +8,9 @@ Geltungsbereich: `src/common/`, `src/pi2_safety/`, `tests/`. Stand: 10.11.2026.
 
 | Regel | Inhalt | Status | Nachweis |
 |---|---|---|---|
-| Dir 2.1 | Übersetzung ohne Fehler | erfüllt (Simulation), offen für `hal_pigpio.c` | GCC mit `-Wall -Wextra -Wpedantic -Wshadow` ohne Fehler und Warnungen. `hal_pigpio.c` ist nur auf Syntax geprüft und muss am Raspberry Pi gebaut werden. |
+| Dir 2.1 | Übersetzung ohne Fehler | erfüllt (Simulation), offen für `hal_pigpio.c` | GCC mit `-Wall -Wextra -Wpedantic -Wshadow -Werror` ohne Fehler und Warnungen, im normalen Build und im Testmodus. `hal_pigpio.c` ist nur auf Syntax geprüft und muss am Raspberry Pi gebaut werden. |
 | Dir 3.1 | Rückverfolgbarkeit zu Anforderungen | teilweise | Kommentare verweisen auf SAF-xx, Hx, Px, TC-xx. Offene Punkte siehe unten. |
-| Dir 4.1 | Laufzeitfehler minimieren | erfüllt | Zeigerprüfung in allen öffentlichen Funktionen, Bereichsprüfung vor jedem Array-Zugriff und jeder einengenden Umwandlung, keine dynamische Speicherverwaltung, 195 Unit-Test-Prüfungen. |
+| Dir 4.1 | Laufzeitfehler minimieren | erfüllt | Zeigerprüfung in allen öffentlichen Funktionen, Bereichsprüfung vor jedem Array-Zugriff und jeder einengenden Umwandlung, keine dynamische Speicherverwaltung, 216 Unit-Test-Prüfungen. |
 | Dir 4.6 | Typen mit fester Breite | erfüllt mit Ausnahmen | Durchgehend `<stdint.h>`-Typen, `bool`, `size_t`, `char_t`. Ausnahmen siehe unten. |
 | Dir 4.7 | Fehlerinformationen auswerten | erfüllt gemäß Projektliste | Projektliste siehe unten. |
 | Dir 4.10 | Include-Guards | erfüllt | Alle Header mit `#ifndef NAME_H` / `#define NAME_H`, Namen projektweit eindeutig. |
@@ -53,9 +53,9 @@ Designdokument ergänzt oder aus dem Code entfernt werden.
 | Überwachung der Safety-Logik in `motor.c` (`SAFETY_ALIVE_TIMEOUT_MS`) | Motor AUS, wenn die Safety-Logik ihren Zustand nicht mehr aktualisiert |
 | Hardware-Watchdog `watchdog.c` und Rückmeldung `motor_status` | Reset des Pi, wenn Safety-Logik oder Motorsteuerung hängen oder das Programm abstürzt; im README als Ergänzung zum Designdokument beschrieben |
 | Lokaler Stop über SIGINT/SIGTERM und Handler für Programmfehler in `main_pi2.c` | Motor AUS beim Beenden oder Absturz des Programms |
-| Erste Messung nach Start oder ungültigem Wert gilt als ungültig (`sensors.c`) | P2 ist ohne Vorgängerwert nicht prüfbar |
 | Zähler `motor_off_failures` | Meldung, wenn Motor AUS nicht gesetzt werden konnte |
 | `mlockall` und feste Stackgröße der Threads | Zeitverhalten |
+| Befehl `run` und Zähler für Zyklusüberschreitungen im Testmodus | Nachlaufmessung für SAF-10 und Nachweis für SAF-06; nur in `pi2_app_test` enthalten |
 
 ## Weitere Befunde des cppcheck-MISRA-Addons
 

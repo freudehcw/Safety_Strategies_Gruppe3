@@ -28,11 +28,4 @@
 #define CFG_SENSOR_DEV_CYCLES     2U    /* P3: aufeinanderfolgende Messzyklen */
 #define CFG_SENSOR_MAX_AGE_MS     150U  /* P4 */
 
-/* --- Sicherheitsabstaende (SAF-07, SAF-08) ----------------------------- */
-/* PLATZHALTER: endgueltige Werte nach Messung von Reaktions- und
- * Nachlaufzeit am realen Aufbau festlegen und dokumentieren (SAF-10). */
-#define CFG_S_LOW_MM              150U
-#define CFG_S_MEDIUM_MM           300U
-#define CFG_S_HIGH_MM             500U
-
 #endif /* CONFIG_H */
