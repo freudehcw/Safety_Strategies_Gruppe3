@@ -1,3 +1,10 @@
+/*
+ * protocol.c - Serialisierung und Pruefung der Frames zwischen Pi 1 und Pi 2
+ * (Format siehe protocol.h).
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "protocol.h"
 
 #include <string.h>

@@ -9,6 +9,9 @@
  * Angreifer abgewehrt. Fuer die Security-Umsetzung wird nur crypto_utils.c
  * durch eine OpenSSL-EVP-Implementierung ersetzt; Frame-Format und Aufrufer
  * bleiben unveraendert.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef CRYPTO_UTILS_H
 #define CRYPTO_UTILS_H

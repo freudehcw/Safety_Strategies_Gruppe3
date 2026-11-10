@@ -3,6 +3,9 @@
  *
  * Alle Werte sind Design-Startwerte aus dem Designdokument (Abschnitt
  * "Zentrale Designparameter") und muessen am realen Aufbau verifiziert werden.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef CONFIG_H
 #define CONFIG_H

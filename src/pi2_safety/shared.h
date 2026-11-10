@@ -9,6 +9,9 @@
  *  - Ein Thread haelt nie zwei Mutexe gleichzeitig.
  *  - Schlaegt ein Lesezugriff fehl, wird ein genullter Datensatz geliefert
  *    (valid = false, Zustand INIT), also die sichere Seite.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef SHARED_H
 #define SHARED_H
@@ -45,6 +48,15 @@ typedef struct {
     uint32_t transitions;    /* Anzahl dieser Wechsel */
 } safety_state_t;
 
+/* Rueckmeldung der Motorsteuerung.
+ * Schreibt: Motorsteuerung. Liest: Safety-Logik (Watchdog), Kommunikation (ACK). */
+#define MOTOR_LEVEL_UNKNOWN 0xFFU /* Motor AUS konnte nicht gesetzt werden */
+typedef struct {
+    uint8_t applied_level; /* tatsaechlich umgesetzte Stufe; LEVEL_OFF = Motor AUS */
+    uint32_t generation;   /* Generation von safety_state, die umgesetzt wurde */
+    uint64_t updated_us;   /* Zeitpunkt der Umsetzung */
+} motor_status_t;
+
 int32_t shared_init(void); /* 0 = OK */
 
 void shared_sensor_write(uint32_t idx, const sensor_data_t *data);
@@ -61,6 +73,9 @@ void shared_state_read(safety_state_t *state);
  * Rueckgabe: true, wenn ein neuer Zustand vorliegt.
  */
 bool shared_state_wait(uint32_t last_generation, uint64_t deadline_us, safety_state_t *state);
+
+void shared_motor_write(const motor_status_t *status);
+void shared_motor_read(motor_status_t *status);
 
 /* Lokale Stop-Anforderung (SIGINT/SIGTERM, Testkonsole). */
 void shared_request_stop(void);

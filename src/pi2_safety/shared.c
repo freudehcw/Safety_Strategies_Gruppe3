@@ -1,3 +1,10 @@
+/*
+ * shared.c - Gemeinsame Datensaetze von Pi 2 mit je einem Mutex
+ * (Regeln siehe shared.h).
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "shared.h"
 
 #include <errno.h>
@@ -15,6 +22,9 @@ static comm_data_t g_comm;
 static pthread_mutex_t g_state_mutex;
 static pthread_cond_t g_state_cond;
 static safety_state_t g_state;
+
+static pthread_mutex_t g_motor_mutex;
+static motor_status_t g_motor;
 
 static atomic_bool g_stop_requested;
 static atomic_bool g_running;
@@ -45,6 +55,7 @@ int32_t shared_init(void)
     (void)memset(g_sensor, 0, sizeof(g_sensor));
     (void)memset(&g_comm, 0, sizeof(g_comm));
     (void)memset(&g_state, 0, sizeof(g_state)); /* STATE_INIT, Motor AUS */
+    (void)memset(&g_motor, 0, sizeof(g_motor));
     atomic_store(&g_stop_requested, false);
     atomic_store(&g_running, true);
 
@@ -58,6 +69,9 @@ int32_t shared_init(void)
     }
     if (rc == 0) {
         rc = init_mutex(&g_state_mutex);
+    }
+    if (rc == 0) {
+        rc = init_mutex(&g_motor_mutex);
     }
     if (rc == 0) {
         rc = pthread_condattr_init(&cattr);
@@ -155,6 +169,27 @@ bool shared_state_wait(uint32_t last_generation, uint64_t deadline_us, safety_st
         }
     }
     return is_new;
+}
+
+void shared_motor_write(const motor_status_t *status)
+{
+    if ((status != NULL) && (pthread_mutex_lock(&g_motor_mutex) == 0)) {
+        g_motor = *status;
+        (void)pthread_mutex_unlock(&g_motor_mutex);
+    }
+}
+
+void shared_motor_read(motor_status_t *status)
+{
+    if (status != NULL) {
+        /* Bei Fehler: Generation 0 gilt nie als aktuelle Rueckmeldung. */
+        (void)memset(status, 0, sizeof(*status));
+        status->applied_level = MOTOR_LEVEL_UNKNOWN;
+        if (pthread_mutex_lock(&g_motor_mutex) == 0) {
+            *status = g_motor;
+            (void)pthread_mutex_unlock(&g_motor_mutex);
+        }
+    }
 }
 
 void shared_request_stop(void)

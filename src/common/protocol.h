@@ -10,6 +10,9 @@
  *   11     Nonce         12 B
  *   23     Nutzdaten      n B
  *   23+n   Tag           16 B
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef PROTOCOL_H
 #define PROTOCOL_H

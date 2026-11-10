@@ -1,3 +1,10 @@
+/*
+ * bt_server.c - Kommunikations-Thread von Pi 2: Verbindung annehmen,
+ * Nachrichten pruefen, comm_data schreiben, STATUS und ACK senden.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "bt_server.h"
 
 #include <errno.h>
@@ -143,7 +150,11 @@ static bool send_frame(connection_t *conn, uint8_t type, const uint8_t *payload,
         (void)memcpy(frame.payload, payload, len);
     }
 
-    if (((payload != NULL) || (len == 0U)) &&
+    /* Designdokument 5.2: Die Sequenznummer laeuft nie ueber. Ist der
+     * Maximalwert erreicht, wird nicht mehr gesendet und die Verbindung
+     * abgebaut; nach dem Neuaufbau beginnt sie mit neuer Session-ID bei 1. */
+    if ((conn->tx_seq < UINT32_MAX) &&
+        ((payload != NULL) || (len == 0U)) &&
         (proto_encode(&frame, buf, sizeof(buf), &total) == 0)) {
         ssize_t n = send(conn->fd, buf, total, MSG_NOSIGNAL | MSG_DONTWAIT);
         if ((n >= 0) && ((size_t)n == total)) {
@@ -153,7 +164,8 @@ static bool send_frame(connection_t *conn, uint8_t type, const uint8_t *payload,
     }
     if (!ok) {
         /* Teilweise gesendeter Frame waere nicht mehr synchron: Verbindung abbauen. */
-        conn_close(conn, "Sendefehler");
+        conn_close(conn, (conn->tx_seq < UINT32_MAX) ? "Sendefehler"
+                                                     : "Sequenznummer ausgeschoepft");
     }
     return ok;
 }
@@ -293,7 +305,10 @@ void *bt_server_thread(void *arg)
     const uint64_t status_period_us = (uint64_t)CFG_STATUS_PERIOD_MS * TIME_US_PER_MS;
     connection_t conn;
     comm_data_t comm; /* einziger Schreiber von comm_data */
-    bool ack_sent = false;
+    bool ack_done = false;
+    bool shutdown_seen = false;
+    uint32_t shutdown_generation = 0U;
+    uint64_t shutdown_since_us = 0U;
 
     (void)arg;
     (void)memset(&conn, 0, sizeof(conn));
@@ -345,15 +360,39 @@ void *bt_server_thread(void *arg)
         }
 
         shared_state_read(&state);
-        if ((state.state == STATE_SHUTDOWN) && !ack_sent) {
-            /* Letzter STATUS (SHUTDOWN), danach ACK. Scheitert das Senden, ist
-             * die Verbindung bereits abgebaut und es gibt nichts zu bestaetigen. */
-            if ((conn.fd >= 0) && send_status(&conn) &&
-                !send_frame(&conn, MSG_ACK, NULL, 0U)) {
-                (void)fprintf(stderr, "[comm] ACK konnte nicht gesendet werden\n");
+        if ((state.state == STATE_SHUTDOWN) && !ack_done) {
+            motor_status_t motor;
+            bool motor_is_off;
+
+            if (!shutdown_seen) {
+                shutdown_seen = true;
+                shutdown_generation = state.generation;
+                shutdown_since_us = time_now_us();
             }
-            ack_sent = true;
-            atomic_store(&g_shutdown_acked, true);
+            /* SAF-09: ACK erst, wenn die Motorsteuerung fuer eine Generation ab
+             * SHUTDOWN "Motor AUS" zurueckgemeldet hat (Differenz ueberlaufsicher). */
+            shared_motor_read(&motor);
+            motor_is_off = (motor.applied_level == LEVEL_OFF) &&
+                           ((uint32_t)(motor.generation - shutdown_generation) < 0x80000000UL);
+
+            if (motor_is_off) {
+                /* Letzter STATUS (SHUTDOWN), danach ACK. Scheitert das Senden, ist
+                 * die Verbindung bereits abgebaut und es gibt nichts zu bestaetigen. */
+                if ((conn.fd >= 0) && send_status(&conn) &&
+                    !send_frame(&conn, MSG_ACK, NULL, 0U)) {
+                    (void)fprintf(stderr, "[comm] ACK konnte nicht gesendet werden\n");
+                }
+                ack_done = true;
+            } else if (time_age_us(time_now_us(), shutdown_since_us) >
+                       ((uint64_t)SHUTDOWN_MOTOR_WAIT_MS * TIME_US_PER_MS)) {
+                (void)fprintf(stderr, "[comm] Motor AUS nicht bestaetigt: kein ACK gesendet\n");
+                ack_done = true;
+            } else {
+                /* weiter auf die Rueckmeldung der Motorsteuerung warten */
+            }
+            if (ack_done) {
+                atomic_store(&g_shutdown_acked, true);
+            }
         }
 
         if (conn.fd >= 0) {

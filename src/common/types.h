@@ -3,6 +3,9 @@
  *
  * Im Projekt werden die Typen fester Breite aus <stdint.h> sowie bool,
  * size_t und ssize_t verwendet. Fuer Zeichen und Zeichenketten gilt char_t.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef TYPES_H
 #define TYPES_H

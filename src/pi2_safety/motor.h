@@ -1,6 +1,9 @@
 /*
  * motor.h - Motorsteuerung: setzt ausschliesslich die von der Safety-Logik
  * freigegebene Stufe um. Alles andere fuehrt zu Motor AUS.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef MOTOR_H
 #define MOTOR_H

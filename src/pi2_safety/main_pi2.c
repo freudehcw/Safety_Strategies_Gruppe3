@@ -2,13 +2,17 @@
  * main_pi2.c - Raspberry Pi 2: Sensorerfassung, Safety-Logik, Motorsteuerung.
  *
  * Aufruf:
- *   pi2_app [--tcp PORT] [--test]
- *     --tcp PORT  TCP auf 127.0.0.1 statt Bluetooth-RFCOMM (Entwicklung)
- *     --test      Testmodus: Fehlereinspeisung ueber die Konsole (stdin)
+ *   pi2_app [--tcp PORT] [--test] [--no-watchdog]
+ *     --tcp PORT     TCP auf 127.0.0.1 statt Bluetooth-RFCOMM (Entwicklung)
+ *     --test         Testmodus: Fehlereinspeisung ueber die Konsole (stdin)
+ *     --no-watchdog  Hardware-Watchdog nicht verwenden (nur Entwicklung)
  *
  * Ablauf (SAF-02, SAF-09): Motor AUS -> Initialisierung -> Threads starten ->
  * Zustandswechsel protokollieren -> bei Stop/Shutdown zuerst Motor AUS, dann
  * Threads und Programm beenden.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #include <errno.h>
 #include <inttypes.h>
@@ -33,9 +37,11 @@
 #include "shared.h"
 #include "time_utils.h"
 #include "types.h"
+#include "watchdog.h"
 
 #define MAIN_POLL_MS         10
-#define SHUTDOWN_ACK_WAIT_MS 500U
+/* laenger als SHUTDOWN_MOTOR_WAIT_MS, damit die Kommunikation fertig wird */
+#define SHUTDOWN_ACK_WAIT_MS 700U
 #define SIGNAL_GRACE_MS      300U
 #define THREAD_STACK_BYTES   (256U * 1024U)
 #define CONSOLE_VALUE_MAX    100000
@@ -53,6 +59,7 @@ typedef struct {
 typedef struct {
     bt_server_cfg_t comm;
     bool test_mode;
+    bool use_watchdog;
 } options_t;
 
 static volatile sig_atomic_t g_signal_received = 0;
@@ -211,6 +218,7 @@ static bool parse_options(int32_t argc, char_t *const argv[], options_t *options
     options->comm.use_tcp = false;
     options->comm.tcp_port = 0U;
     options->test_mode = false;
+    options->use_watchdog = true;
 
     while (ok && (a < argc)) {
         if ((strcmp(argv[a], "--tcp") == 0) && ((a + 1) < argc)) {
@@ -219,6 +227,9 @@ static bool parse_options(int32_t argc, char_t *const argv[], options_t *options
             a += 2;
         } else if (strcmp(argv[a], "--test") == 0) {
             options->test_mode = true;
+            a += 1;
+        } else if (strcmp(argv[a], "--no-watchdog") == 0) {
+            options->use_watchdog = false;
             a += 1;
         } else {
             ok = false;
@@ -280,7 +291,7 @@ int main(int argc, char **argv)
     size_t i;
 
     if (!parse_options(argc, argv, &options)) {
-        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--test]\n", argv[0]);
+        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--test] [--no-watchdog]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -324,6 +335,26 @@ int main(int argc, char **argv)
         } else {
             (void)fprintf(stderr, "Warnung: Testkonsole nicht verfuegbar\n");
         }
+    }
+
+    /* Hardware-Watchdog: direkt vor dem Start der Threads oeffnen, damit die
+     * Safety-Logik ihn sofort bedient. In der Simulation gibt es keinen. */
+    if (hal_is_simulation()) {
+        (void)printf("Hardware-Watchdog: nicht aktiv (Simulation)\n");
+    } else if (!options.use_watchdog) {
+        (void)fprintf(stderr, "WARNUNG: Hardware-Watchdog abgeschaltet (--no-watchdog); "
+                              "bei einem Absturz kann der Motor weiterlaufen\n");
+    } else if (watchdog_open() != 0) {
+        (void)fprintf(stderr, "Fehler: Hardware-Watchdog (%s) nicht verfuegbar. Moegliche Ursachen: "
+                              "keine Root-Rechte, dtparam=watchdog=on fehlt oder systemd "
+                              "verwendet ihn bereits (RuntimeWatchdogSec)\n", WATCHDOG_DEVICE);
+        bt_server_close();
+        if (hal_shutdown() != 0) {
+            (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
+        }
+        return EXIT_FAILURE;
+    } else {
+        (void)printf("Hardware-Watchdog: aktiv, Timeout %" PRId32 " s\n", (int32_t)WATCHDOG_TIMEOUT_S);
     }
 
     /* 2. Threads starten. */
@@ -408,7 +439,13 @@ int main(int argc, char **argv)
     }
     bt_server_close();
     if ((hal_motor_off() != 0) || (hal_shutdown() != 0) || (motor_off_failures() != 0U)) {
+        /* Der Watchdog bleibt absichtlich offen: Ohne "Magic Close" setzt er
+         * den Pi nach dem Programmende zurueck und der Motor wird stromlos. */
         (void)fprintf(stderr, "FEHLER: Motor AUS bzw. Hardware-Freigabe fehlgeschlagen\n");
+        exit_code = EXIT_FAILURE;
+    } else if (watchdog_close() != 0) {
+        (void)fprintf(stderr, "FEHLER: Watchdog nicht ordnungsgemaess geschlossen; "
+                              "der Pi wird zurueckgesetzt\n");
         exit_code = EXIT_FAILURE;
     } else {
         (void)printf("Pi 2 beendet, Motor AUS\n");

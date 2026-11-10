@@ -4,6 +4,9 @@
  * Zwei Implementierungen:
  *   hal_pigpio.c - reale Hardware ueber pigpio (Raspberry Pi 4B)
  *   hal_sim.c    - Simulation fuer Entwicklung und Tests ohne Hardware
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef HAL_H
 #define HAL_H
@@ -18,6 +21,8 @@ int32_t hal_init(void);
 /* Gibt die Hardware frei; der Motor ist danach AUS. 0 = OK. */
 int32_t hal_shutdown(void);
 const char_t *hal_name(void);
+/* true bei simulierter Hardware (dann wird kein Hardware-Watchdog verwendet). */
+bool hal_is_simulation(void);
 
 /* Sicherer Zustand (SAF-01): STBY = LOW ("Enable = OFF") und PWM = 0.
  * 0 = OK, -1 = mindestens ein Ausgang konnte nicht gesetzt werden. */

@@ -2,6 +2,9 @@
  * pi2_config.h - Pi-2-spezifische Konstanten: Pinbelegung (BCM-Nummerierung,
  * siehe Designdokument Abschnitt "Pinout"), Zeitverhalten der Threads und
  * Motoransteuerung.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef PI2_CONFIG_H
 #define PI2_CONFIG_H
@@ -42,6 +45,16 @@
 /* Aktualisiert die Safety-Logik ihren Zustand laenger nicht, schaltet die
  * Motorsteuerung selbststaendig ab (Ueberwachung des Safety-Logik-Threads). */
 #define SAFETY_ALIVE_TIMEOUT_MS 150U
+
+/* --- Hardware-Watchdog ---------------------------------------------------- */
+#define WATCHDOG_DEVICE    "/dev/watchdog"
+#define WATCHDOG_TIMEOUT_S 1
+/* Der Watchdog wird nur bedient, wenn die Motorsteuerung hoechstens so viele
+ * Zyklen der Safety-Logik zurueckliegt (1 Zyklus = 50 ms, also <= 100 ms). */
+#define WATCHDOG_MAX_MOTOR_LAG 1U
+/* Kommunikation: so lange wird nach SHUTDOWN auf "Motor AUS" gewartet, bevor
+ * das ACK entfaellt. */
+#define SHUTDOWN_MOTOR_WAIT_MS 500U
 
 /* --- Thread-Prioritaeten (SCHED_FIFO) ------------------------------------ */
 #define PRIO_SAFETY 80

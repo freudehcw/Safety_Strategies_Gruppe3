@@ -1,3 +1,10 @@
+/*
+ * motor.c - Motorsteuerungs-Thread: setzt die von der Safety-Logik
+ * freigegebene Stufe um, sonst Motor AUS.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "motor.h"
 
 #include <stdatomic.h>
@@ -13,12 +20,28 @@
 static _Atomic uint32_t g_off_failures;
 
 /* Motor AUS anfordern; ein Fehler wird gezaehlt und im naechsten Zyklus
- * erneut versucht (die Abschaltung wird zyklisch wiederholt). */
-static void motor_off(void)
+ * erneut versucht (die Abschaltung wird zyklisch wiederholt).
+ * Rueckgabe: LEVEL_OFF, wenn der Motor sicher AUS ist, sonst MOTOR_LEVEL_UNKNOWN. */
+static uint8_t motor_off(void)
 {
+    uint8_t applied = LEVEL_OFF;
+
     if (hal_motor_off() != 0) {
         (void)atomic_fetch_add(&g_off_failures, 1U);
+        applied = MOTOR_LEVEL_UNKNOWN;
     }
+    return applied;
+}
+
+/* Meldet die umgesetzte Stufe zurueck (fuer ACK und Watchdog). */
+static void report_status(uint8_t applied, uint32_t generation)
+{
+    motor_status_t status;
+
+    status.applied_level = applied;
+    status.generation = generation;
+    status.updated_us = time_now_us();
+    shared_motor_write(&status);
 }
 
 uint32_t motor_off_failures(void)
@@ -55,7 +78,8 @@ void *motor_thread(void *arg)
     uint8_t applied = LEVEL_OFF;
 
     (void)arg;
-    motor_off();
+    applied = motor_off();
+    report_status(applied, generation);
 
     while (shared_running()) {
         safety_state_t state;
@@ -77,20 +101,20 @@ void *motor_thread(void *arg)
         }
 
         if (duty == 0U) {
-            motor_off();
-            applied = LEVEL_OFF;
+            applied = motor_off();
         } else if (state.motor_level != applied) {
             if (hal_motor_run(duty) == 0) {
                 applied = state.motor_level;
             } else {
-                motor_off();
-                applied = LEVEL_OFF;
+                applied = motor_off();
             }
         } else {
             /* Stufe unveraendert: Ausgang bleibt */
         }
+        report_status(applied, generation);
     }
 
-    motor_off();
+    applied = motor_off();
+    report_status(applied, generation);
     return NULL;
 }

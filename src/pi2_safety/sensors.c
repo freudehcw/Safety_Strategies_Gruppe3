@@ -1,3 +1,10 @@
+/*
+ * sensors.c - Sensor-Threads (HC-SR04) mit den Pruefungen P1 und P2 sowie
+ * Fehlereinspeisung fuer den Testmodus.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "sensors.h"
 
 #include <stdatomic.h>

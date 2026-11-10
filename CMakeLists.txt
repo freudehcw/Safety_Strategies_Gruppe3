@@ -78,6 +78,7 @@ add_library(pi2_core STATIC
     src/pi2_safety/motor.c
     src/pi2_safety/bt_server.c
     src/pi2_safety/shared.c
+    src/pi2_safety/watchdog.c
 )
 target_include_directories(pi2_core PUBLIC src/pi2_safety)
 target_link_libraries(pi2_core PUBLIC common Threads::Threads)

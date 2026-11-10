@@ -6,6 +6,9 @@
  * Programms).
  * TB6612FNG Kanal A: Hardware-PWM an PWMA, Richtung ueber AIN1/AIN2,
  * STBY als Enable.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #include "hal.h"
 
@@ -110,6 +113,11 @@ int32_t hal_shutdown(void)
 const char_t *hal_name(void)
 {
     return "pigpio";
+}
+
+bool hal_is_simulation(void)
+{
+    return false;
 }
 
 void hal_motor_emergency_off(void)

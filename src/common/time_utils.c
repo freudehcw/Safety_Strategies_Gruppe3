@@ -1,3 +1,10 @@
+/*
+ * time_utils.c - Monotone Zeitbasis: aktuelle Zeit, Schlafen bis zu einem
+ * absoluten Zeitpunkt und Alter eines Zeitstempels.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "time_utils.h"
 
 #include <errno.h>

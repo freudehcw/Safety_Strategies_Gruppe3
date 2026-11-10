@@ -1,6 +1,9 @@
 /*
  * crypto_utils.c - PLATZHALTER ohne Security (siehe crypto_utils.h).
  * Tag = CRC-32 (IEEE 802.3) ueber AAD || Nonce || Nutzdaten, Rest 0.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #include "crypto_utils.h"
 

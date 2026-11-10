@@ -1,3 +1,10 @@
+/*
+ * safety_logic.c - Safety-Entscheidung je Zyklus (safety_evaluate) und der
+ * Safety-Logik-Thread, der sie alle 50 ms ausfuehrt.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
+ */
 #include "safety_logic.h"
 
 #include <stddef.h>
@@ -5,6 +12,7 @@
 #include "config.h"
 #include "protocol.h"
 #include "time_utils.h"
+#include "watchdog.h"
 
 void safety_ctx_init(safety_ctx_t *ctx)
 {
@@ -126,6 +134,19 @@ void safety_evaluate(safety_ctx_t *ctx, const sensor_data_t sensors[SENSOR_COUNT
     }
 }
 
+bool safety_motor_up_to_date(uint32_t last_generation, const motor_status_t *status)
+{
+    bool up_to_date = false;
+
+    if ((status != NULL) && (status->applied_level != MOTOR_LEVEL_UNKNOWN)) {
+        /* uint32-Differenz ist auch beim Ueberlauf des Zaehlers korrekt */
+        uint32_t lag = last_generation - status->generation;
+
+        up_to_date = (lag <= WATCHDOG_MAX_MOTOR_LAG);
+    }
+    return up_to_date;
+}
+
 void *safety_thread(void *arg)
 {
     const uint64_t period_us = (uint64_t)CFG_SAFETY_PERIOD_MS * TIME_US_PER_MS;
@@ -136,13 +157,26 @@ void *safety_thread(void *arg)
     (void)arg;
     safety_ctx_init(&ctx);
 
-    /* Keine blockierenden Netzwerk-, Logging- oder GPIO-Aufrufe in dieser Schleife. */
+    /* Keine blockierenden Netzwerk-, Logging- oder GPIO-Aufrufe in dieser Schleife;
+     * erlaubt sind Mutex-Kopien und das Bedienen des Watchdogs. */
     while (shared_running()) {
         sensor_data_t sensors[SENSOR_COUNT];
         comm_data_t comm;
         safety_decision_t decision;
         uint64_t now_us;
         uint32_t i;
+
+        /* Watchdog nur bedienen, wenn die Motorsteuerung die letzte Freigabe
+         * umgesetzt hat. Haengt einer der beiden Threads, setzt der Watchdog
+         * den Pi zurueck. Kann er nicht bedient werden: kontrolliert beenden. */
+        if (watchdog_is_open()) {
+            motor_status_t motor;
+
+            shared_motor_read(&motor);
+            if (safety_motor_up_to_date(state.generation, &motor) && (watchdog_kick() != 0)) {
+                shared_request_stop();
+            }
+        }
 
         for (i = 0U; i < SENSOR_COUNT; i++) {
             shared_sensor_read(i, &sensors[i]);

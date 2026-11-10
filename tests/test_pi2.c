@@ -4,6 +4,9 @@
  * Motorstufen und Nachrichtenformat.
  *
  * Die Testnamen verweisen auf die Testfaelle TC-xx des Designdokuments.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #include <inttypes.h>
 #include <stdbool.h>
@@ -415,6 +418,33 @@ static void test_check_priority(void)
     CHECK(d.motor_level == LEVEL_OFF);
 }
 
+static void test_watchdog_condition(void)
+{
+    motor_status_t st;
+
+    st.applied_level = LEVEL_OFF;
+    st.generation = 100U;
+    st.updated_us = T0;
+
+    /* Motorsteuerung hat die letzte oder die vorletzte Generation umgesetzt */
+    CHECK(safety_motor_up_to_date(100U, &st));
+    CHECK(safety_motor_up_to_date(101U, &st));
+    /* Motorsteuerung liegt mehr als einen Zyklus zurueck: Watchdog nicht bedienen */
+    CHECK(!safety_motor_up_to_date(102U, &st));
+    CHECK(!safety_motor_up_to_date(500U, &st));
+    /* Motor AUS konnte nicht gesetzt werden */
+    st.applied_level = MOTOR_LEVEL_UNKNOWN;
+    CHECK(!safety_motor_up_to_date(100U, &st));
+    /* Laufender Motor mit aktueller Rueckmeldung ist in Ordnung */
+    st.applied_level = LEVEL_HIGH;
+    CHECK(safety_motor_up_to_date(100U, &st));
+    /* Ueberlauf des Generationszaehlers */
+    st.generation = UINT32_MAX;
+    CHECK(safety_motor_up_to_date(0U, &st));
+    CHECK(!safety_motor_up_to_date(1U, &st));
+    CHECK(!safety_motor_up_to_date(100U, NULL));
+}
+
 static void test_motor_levels(void)
 {
     CHECK(motor_duty_permille(LEVEL_OFF) == 0U);
@@ -518,6 +548,7 @@ int main(void)
     test_object_stop();
     test_shutdown();
     test_check_priority();
+    test_watchdog_condition();
     test_motor_levels();
     test_protocol();
 

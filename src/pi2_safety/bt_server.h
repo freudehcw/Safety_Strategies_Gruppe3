@@ -3,6 +3,9 @@
  *
  * Transport: RFCOMM ueber BlueZ (Normalbetrieb) oder TCP auf localhost
  * (Entwicklung ohne Bluetooth, z. B. mit tools/pi1_sim.py).
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef BT_SERVER_H
 #define BT_SERVER_H
@@ -21,8 +24,9 @@ void bt_server_close(void);
 
 void *bt_server_thread(void *arg);
 
-/* true, sobald im Zustand SHUTDOWN das ACK gesendet wurde (oder keine
- * Verbindung besteht). */
+/* true, sobald im Zustand SHUTDOWN die Bestaetigung abgeschlossen ist: ACK
+ * nach "Motor AUS" gesendet, keine Verbindung vorhanden oder Motor AUS
+ * innerhalb von SHUTDOWN_MOTOR_WAIT_MS nicht bestaetigt (dann kein ACK). */
 bool bt_server_shutdown_acked(void);
 
 #endif /* BT_SERVER_H */

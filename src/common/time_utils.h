@@ -1,6 +1,9 @@
 /*
  * time_utils.h - Monotone Zeitbasis (CLOCK_MONOTONIC) fuer Timeouts,
  * Datenalter und zyklische Threads.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef TIME_UTILS_H
 #define TIME_UTILS_H

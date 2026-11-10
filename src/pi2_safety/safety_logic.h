@@ -3,6 +3,9 @@
  *
  * safety_evaluate() ist eine reine Funktion ohne Hardware-, Zeit- oder
  * Thread-Abhaengigkeit und wird in tests/ direkt geprueft.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef SAFETY_LOGIC_H
 #define SAFETY_LOGIC_H
@@ -42,6 +45,13 @@ uint16_t safety_distance_mm(uint8_t level);
 void safety_evaluate(safety_ctx_t *ctx, const sensor_data_t sensors[SENSOR_COUNT],
                      const comm_data_t *comm, bool local_stop, uint64_t now_us,
                      safety_decision_t *decision);
+
+/*
+ * Watchdog-Bedingung: true, wenn die Motorsteuerung die zuletzt geschriebene
+ * Generation von safety_state (oder die davor) umgesetzt hat und der Motor
+ * nicht in einem unbekannten Zustand ist.
+ */
+bool safety_motor_up_to_date(uint32_t last_generation, const motor_status_t *status);
 
 void *safety_thread(void *arg);
 

@@ -1,5 +1,8 @@
 /*
  * sensors.h - Sensor-Threads (HC-SR04) mit den Einzelpruefungen P1 und P2.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #ifndef SENSORS_H
 #define SENSORS_H

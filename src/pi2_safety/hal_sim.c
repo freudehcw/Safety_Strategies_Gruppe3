@@ -2,6 +2,9 @@
  * hal_sim.c - Simulierte Hardware fuer Entwicklung und Tests ohne Raspberry Pi.
  * Der Abstand je Sensor wird ueber hal_test_set_distance_mm() vorgegeben, die
  * Motoransteuerung wird nur protokolliert.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * geprueft von: <Name>
  */
 #include "hal.h"
 
@@ -45,6 +48,11 @@ int32_t hal_motor_off(void)
         (void)fprintf(stderr, "[sim] Motor AUS (STBY = LOW, PWM = 0)\n");
     }
     return 0;
+}
+
+bool hal_is_simulation(void)
+{
+    return true;
 }
 
 void hal_motor_emergency_off(void)

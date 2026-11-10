@@ -2,6 +2,8 @@
 """Einfache Gegenstelle fuer Pi 2: simuliert Pi 1 (Heartbeat, Stufe, Stop).
 
 Nur ein Entwicklungs- und Testwerkzeug, kein Ersatz fuer die Pi-1-Software.
+Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+geprueft von: <Name>
 Das Frame-Format entspricht src/common/protocol.h; das Tag ist die
 Platzhalter-CRC aus src/common/crypto_utils.c (keine Security).
 
