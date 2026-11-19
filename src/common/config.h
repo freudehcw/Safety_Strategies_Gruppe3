@@ -17,6 +17,10 @@
 #define CFG_COMM_POLL_TIMEOUT_MS  50    /* poll()-Timeout Kommunikations-Thread */
 #define CFG_RFCOMM_CHANNEL        1U    /* fester RFCOMM-Kanal */
 
+/* --- Kryptografie (SEC-01, Abschnitt 5.2 T1) ---------------------------- */
+#define CFG_PSK_LEN               32U   /* statischer 256-Bit-Pre-Shared-Key */
+#define CFG_PSK_DEFAULT_PATH      "/etc/ssm/psk.bin" /* auf beiden Pis identisch */
+
 /* --- Safety-Logik (SAF-06) -------------------------------------------- */
 #define CFG_SAFETY_PERIOD_MS      50U
 
