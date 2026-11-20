@@ -36,7 +36,7 @@ POSIX-, pthread- und pigpio-Funktionen. Ihr Rückgabewert wird ausgewertet. Davo
 |---|---|
 | `printf`, `fprintf`, `fflush` | Reine Diagnoseausgabe außerhalb der Safety-Logik; ein Fehler beeinflusst die Safety-Funktion nicht. |
 | `close` | Aufräumpfad; es ist keine sinnvolle Reaktion möglich. |
-| `memset`, `memcpy`, `memmove` | Liefern keinen Fehler, sondern den Zielzeiger. |
+| `memset`, `memcpy`, `memmove`, `strncpy` | Liefern keinen Fehler, sondern den Zielzeiger. |
 | `pthread_mutex_unlock`, `pthread_cond_broadcast` | Aufruf nur nach erfolgreichem `pthread_mutex_lock` desselben Threads auf einem initialisierten Objekt; ein Fehler ist ausgeschlossen (Ausnahme der Direktive). |
 | `signal`, `raise`, `gpioWrite` in `on_fatal` bzw. `hal_motor_emergency_off` | Fehlerpfad im Signal-Handler; keine weitere Reaktion möglich. |
 | `shared_state_wait`, `atomic_fetch_add` | Rückgabewert ist keine Fehlerinformation. |

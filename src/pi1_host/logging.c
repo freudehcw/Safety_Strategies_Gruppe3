@@ -18,7 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "pi1_names.h"
+#include "names.h"
 #include "shared.h"
 #include "time_utils.h"
 

@@ -28,7 +28,7 @@
 
 #include "logging.h"
 #include "pi1_config.h"
-#include "pi1_names.h"
+#include "names.h"
 #include "proto_stream.h"
 #include "protocol.h"
 #include "session.h"

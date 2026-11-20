@@ -23,7 +23,7 @@ Fällt Pi 1 oder die Verbindung aus, schaltet Pi 2 selbst ab.
 | `src/pi2_safety/hal_pigpio.c` | Hardware über pigpio | Designdokument 2.13 |
 | `src/pi2_safety/hal_sim.c` | simulierte Hardware für den PC | Entwicklung |
 | `src/pi2_safety/pi2_config.h` | Pins, Takte, PWM-Stufen, Sicherheitsabstände, Prioritäten | Designdokument 2.13, SAF-07 |
-| `src/common/` | Nachrichtenformat, Konstanten, Zeitbasis, Krypto-Platzhalter | Designdokument 2.8 |
+| `src/common/` | gemeinsamer Code mit Pi 1: Nachrichtenformat, AES-256-GCM, Session, Transport, Klartextnamen, Konstanten, Zeitbasis | Designdokument 2.8 |
 
 Weitere Erklärungen: [Safety-Logik](erklaerung_pi2_safety_logik.md), [Sensoren](erklaerung_pi2_sensoren.md),
 [Motor und Hardware](erklaerung_pi2_motor_hal.md), [Kommunikation](erklaerung_pi2_kommunikation.md).
@@ -108,7 +108,7 @@ Speicherverwaltung.
 
 | Nr. | Punkt im Auftrag | Stand im Code | Art |
 |---|---|---|---|
-| 1 | `common/` schreibt Pi 1 (`crypto`, `session`, `transport`) | eigenes `src/common/` ohne `session` und `transport`; Sockets liegen in `bt_server.c` | Absprache |
+| 1 | `common/` schreibt Pi 1 (`crypto`, `session`, `transport`) | `bt_server.c` verwendet `transport`, `session`, `proto_stream` und `crypto_utils` aus `common/`; `pi1_names` wurde als `names` nach `common/` verschoben | erledigt |
 | 2 | Struktur `common/`, `pi1/`, `pi2/`, `docs/`, Makefile | `src/common/`, `src/pi2_safety/`, CMake (Build-System im Repo) | Absprache |
 | 3 | GPIO über libgpiod, PWM über sysfs | pigpio (steht so in README und Installationsskripten) | Absprache |
 | 4 | Hardware-Watchdog (Ergänzung 11) | umgesetzt in `watchdog.c`; am Raspberry Pi noch nicht getestet | erledigt |

@@ -66,6 +66,7 @@ find_package(OpenSSL REQUIRED)
 
 add_library(common STATIC
     src/common/crypto_utils.c
+    src/common/names.c
     src/common/protocol.c
     src/common/proto_stream.c
     src/common/session.c
@@ -101,12 +102,8 @@ endif()
 function(add_pi2_core name)
     add_library(${name} STATIC ${PI2_CORE_SRC})
     target_include_directories(${name} PUBLIC src/pi2_safety)
+    # BlueZ (RFCOMM) kommt ueber common/transport.c
     target_link_libraries(${name} PUBLIC common Threads::Threads)
-    if(BLUEZ_FOUND)
-        target_compile_definitions(${name} PRIVATE HAVE_BLUEZ)
-        target_include_directories(${name} PRIVATE ${BLUEZ_INCLUDE_DIRS})
-        target_link_libraries(${name} PUBLIC ${BLUEZ_LIBRARIES})
-    endif()
 endfunction()
 
 function(add_pi2_app name core)
@@ -141,7 +138,6 @@ add_library(pi1_core STATIC
     src/pi1_host/lcd_i2c.c
     src/pi1_host/logging.c
     src/pi1_host/options.c
-    src/pi1_host/pi1_names.c
     src/pi1_host/shared.c
     src/pi1_host/ui_lcd.c
 )

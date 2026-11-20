@@ -18,7 +18,7 @@
 
 #include "lcd_backend.h"
 #include "logging.h"
-#include "pi1_names.h"
+#include "names.h"
 #include "protocol.h"
 #include "time_utils.h"
 

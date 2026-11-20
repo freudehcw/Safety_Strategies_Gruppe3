@@ -1,10 +1,10 @@
 /*
- * pi1_names.c - Klartextnamen fuer Zustand, Fehlercode und Stufe.
+ * names.c - Klartextnamen fuer Zustand, Fehlercode und Stufe.
  *
  * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Opus 5.5),
  * geprueft von: <Name>
  */
-#include "pi1_names.h"
+#include "names.h"
 
 #include "protocol.h"
 

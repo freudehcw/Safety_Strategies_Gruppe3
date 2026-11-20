@@ -1,12 +1,21 @@
-# Pi 2 – Kommunikation (`bt_server.c`, `src/common/protocol.c`)
+# Pi 2 – Kommunikation (`bt_server.c`)
 
-Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2), geprüft von: <Name>
+Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2 und Claude Opus 5.5), geprüft von: <Name>
 
 ## Aufgabe
 
 Der Kommunikations-Thread nimmt genau eine Verbindung von Pi 1 an, prüft eingehende Nachrichten, schreibt
 gültige Befehle nach `comm_data` und sendet alle 100 ms den Status (SAF-05). Er entscheidet nichts über den
 Motor. Ob die Verbindung noch aktuell ist, bewertet die Safety-Logik über den Zeitstempel.
+
+Die Protokollregeln selbst kommen aus `src/common/` und werden von Pi 1 genauso verwendet:
+
+| Modul in `common/` | Aufgabe für Pi 2 |
+|---|---|
+| `transport` | lauschender Socket (RFCOMM Kanal 1 oder TCP auf `127.0.0.1`), Annehmen, Senden, Empfangen mit Timeout |
+| `session` | neue Session-ID je Verbindung, Prüfung von Session-ID und Sequenznummer, nächste eigene Sequenznummer ohne Überlauf |
+| `proto_stream` | Zerlegt den Datenstrom in Frames und erkennt unbekannten Typ oder falsche Länge |
+| `protocol`, `crypto_utils` | Frame bilden und prüfen, AES-256-GCM |
 
 ## Frame-Aufbau
 
@@ -25,18 +34,20 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
 
 ## Ablauf
 
-1. **Warten:** `poll()` auf dem lauschenden Socket, höchstens 50 ms.
-2. **Verbindungsaufbau:** neue Session-ID aus `getrandom()`, Sequenznummern auf 0, sofort ein STATUS.
-3. **Empfang:** Bytes sammeln. Sobald drei Bytes da sind, prüft `proto_peek()` Typ und Länge. Bei unbekanntem
-   Typ oder falscher Länge wird die Verbindung abgebaut, weil der Datenstrom nicht mehr synchron ist.
-4. **Prüfung eines vollständigen Frames** in dieser Reihenfolge: Tag, Session-ID, Sequenznummer größer als
-   die zuletzt akzeptierte, Wertebereich. Schlägt eine Prüfung fehl, wird die Nachricht verworfen und gezählt.
+1. **Warten:** `transport_accept()` wartet höchstens 50 ms auf eine Verbindung.
+2. **Verbindungsaufbau:** `session_start_server()` erzeugt eine neue Session-ID, danach geht sofort ein STATUS hinaus.
+3. **Empfang:** `transport_recv()` wartet höchstens bis zum nächsten STATUS-Zeitpunkt. Die Bytes gehen an
+   `proto_stream`, das vollständige Frames liefert. Bei unbekanntem Typ oder falscher Länge wird die
+   Verbindung abgebaut, weil der Datenstrom nicht mehr synchron ist.
+4. **Prüfung eines vollständigen Frames** in dieser Reihenfolge: Tag (`proto_decode`), Session-ID und
+   Sequenznummer größer als die zuletzt akzeptierte (`session_check_rx`), Wertebereich. Schlägt eine Prüfung fehl, wird die Nachricht verworfen und gezählt.
    Stimmen Tag, Session-ID und Sequenznummer, ist aber der Inhalt ungültig (unbekannte Stufe oder ein Typ,
    den nur Pi 2 sendet), gilt das als ungültiger Befehl: `comm_data` wird sofort entwertet.
 5. **Gültiger HEARTBEAT:** Stufe und Empfangszeit nach `comm_data`. **Gültiges STOP:** Stop-Flag setzen.
 6. **STATUS** alle 100 ms: Zustand, Fehlercode, aktive Stufe, d1, d2 (0xFFFF bei ungültigem Messwert).
 7. **SHUTDOWN:** Der Thread wartet, bis die Motorsteuerung in `motor_status` „Motor AUS“ für eine Generation
-   ab SHUTDOWN zurückgemeldet hat. Dann sendet er einen letzten STATUS und das ACK (SAF-09).
+   ab SHUTDOWN zurückgemeldet hat. Dann sendet er einen letzten STATUS und, falls Pi 1 STOP geschickt hat,
+   das ACK (SAF-09). Endet Pi 2 aus eigenem Grund (Signal), gibt es kein ACK, weil keine Anfrage vorliegt.
 
 ## Wichtige Entscheidungen
 

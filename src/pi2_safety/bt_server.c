@@ -2,107 +2,77 @@
  * bt_server.c - Kommunikations-Thread von Pi 2: Verbindung annehmen,
  * Nachrichten pruefen, comm_data schreiben, STATUS und ACK senden.
  *
- * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
- * geprueft von: <Name>
+ * Uebertragung, Session-Verwaltung und Zerlegung des Datenstroms kommen aus
+ * src/common/ (transport, session, proto_stream), damit Pi 1 und Pi 2 die
+ * Protokollregeln mit demselben Code pruefen. Hier steht nur, was Pi 2
+ * daraus macht.
+ *
+ * Kryptografie: Ver- und Entschluesselung mit AES-256-GCM ueber OpenSSL EVP
+ * (https://www.openssl.org) in src/common/crypto_utils.c, aufgerufen ueber
+ * proto_encode/proto_decode. Nur dieser Thread verwendet die Kryptografie.
+ *
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2
+ * und Claude Opus 5.5), geprueft von: <Name>
  */
 #include "bt_server.h"
 
-#include <errno.h>
 #include <inttypes.h>
-#include <poll.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-
-#ifdef HAVE_BLUEZ
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/rfcomm.h>
-#endif
 
 #include "config.h"
-#include "crypto_utils.h"
+#include "proto_stream.h"
 #include "protocol.h"
+#include "session.h"
 #include "shared.h"
 #include "time_utils.h"
+#include "transport.h"
 #include "types.h"
 
-#define RX_BUF_LEN 256U
+#define TCP_BIND_HOST  "127.0.0.1"
+#define SEND_TIMEOUT_MS 20 /* ein Frame ist klein; laenger darf Senden nicht dauern */
 
 typedef struct {
-    int32_t fd;                 /* -1 = keine Verbindung */
-    uint32_t session_id;    /* Zufallswert je Verbindung */
-    uint32_t tx_seq;        /* zuletzt gesendete Sequenznummer */
-    uint32_t rx_last_seq;   /* zuletzt akzeptierte Sequenznummer */
-    uint8_t rx[RX_BUF_LEN];
-    size_t rx_len;
+    transport_t link;       /* Verbindung zu Pi 1 */
+    session_t session;      /* Session-ID und Sequenznummern */
+    proto_stream_t stream;  /* noch nicht verarbeitete empfangene Bytes */
     uint32_t discarded;     /* verworfene Nachrichten dieser Verbindung */
     uint64_t next_status_us;
 } connection_t;
 
-static int32_t g_listen_fd = -1;
+typedef struct {
+    bool seen;              /* Zustand SHUTDOWN wurde bemerkt */
+    bool done;              /* ACK gesendet oder aufgegeben */
+    uint32_t generation;    /* erste Generation von safety_state im Zustand SHUTDOWN */
+    uint64_t since_us;      /* Zeitpunkt, an dem SHUTDOWN bemerkt wurde */
+} shutdown_t;
+
+static transport_t g_listener;
 static atomic_bool g_shutdown_acked;
 
 /* --- Verbindungsaufbau -------------------------------------------------- */
-
-static int32_t listen_tcp(uint16_t port)
-{
-    int32_t fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-
-    if (fd >= 0) {
-        struct sockaddr_in addr;
-        int32_t one = 1;
-
-        (void)memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-        if ((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, (socklen_t)sizeof(one)) != 0) ||
-            (bind(fd, (const struct sockaddr *)&addr, (socklen_t)sizeof(addr)) != 0) ||
-            (listen(fd, 1) != 0)) {
-            (void)close(fd);
-            fd = -1;
-        }
-    }
-    return fd;
-}
-
-static int32_t listen_rfcomm(void)
-{
-    int32_t fd = -1;
-
-#ifdef HAVE_BLUEZ
-    fd = socket(AF_BLUETOOTH, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, BTPROTO_RFCOMM);
-    if (fd >= 0) {
-        struct sockaddr_rc addr;
-
-        (void)memset(&addr, 0, sizeof(addr)); /* rc_bdaddr = BDADDR_ANY */
-        addr.rc_family = AF_BLUETOOTH;
-        addr.rc_channel = (uint8_t)CFG_RFCOMM_CHANNEL;
-
-        if ((bind(fd, (const struct sockaddr *)&addr, (socklen_t)sizeof(addr)) != 0) ||
-            (listen(fd, 1) != 0)) {
-            (void)close(fd);
-            fd = -1;
-        }
-    }
-#endif
-    return fd;
-}
 
 int32_t bt_server_init(const bt_server_cfg_t *cfg)
 {
     int32_t result = -1;
 
     atomic_store(&g_shutdown_acked, false);
+    transport_init(&g_listener);
     if (cfg != NULL) {
-        g_listen_fd = cfg->use_tcp ? listen_tcp(cfg->tcp_port) : listen_rfcomm();
-        if (g_listen_fd >= 0) {
+        transport_cfg_t tcfg;
+
+        (void)memset(&tcfg, 0, sizeof(tcfg));
+        tcfg.rfcomm_channel = (uint8_t)CFG_RFCOMM_CHANNEL;
+        if (cfg->use_tcp) {
+            /* Entwicklung: nur lokal erreichbar */
+            tcfg.kind = TRANSPORT_KIND_TCP;
+            tcfg.tcp_port = cfg->tcp_port;
+            (void)strncpy(tcfg.host, TCP_BIND_HOST, sizeof(tcfg.host) - 1U);
+        } else {
+            tcfg.kind = TRANSPORT_KIND_RFCOMM;
+        }
+        if (transport_listen(&g_listener, &tcfg) == TRANSPORT_OK) {
             result = 0;
         }
     }
@@ -111,10 +81,7 @@ int32_t bt_server_init(const bt_server_cfg_t *cfg)
 
 void bt_server_close(void)
 {
-    if (g_listen_fd >= 0) {
-        (void)close(g_listen_fd);
-        g_listen_fd = -1;
-    }
+    transport_close(&g_listener);
 }
 
 bool bt_server_shutdown_acked(void)
@@ -124,9 +91,9 @@ bool bt_server_shutdown_acked(void)
 
 static void conn_close(connection_t *conn, const char_t *reason)
 {
-    if (conn->fd >= 0) {
-        (void)close(conn->fd);
-        conn->fd = -1;
+    if (transport_is_open(&conn->link)) {
+        transport_close(&conn->link);
+        session_reset(&conn->session);
         (void)fprintf(stderr, "[comm] Verbindung getrennt (%s), %" PRIu32 " Nachricht(en) verworfen\n",
                       reason, conn->discarded);
     }
@@ -139,33 +106,30 @@ static bool send_frame(connection_t *conn, uint8_t type, const uint8_t *payload,
     proto_frame_t frame;
     uint8_t buf[PROTO_MAX_FRAME];
     size_t total = 0U;
+    int32_t seq_rc;
     bool ok = false;
 
     (void)memset(&frame, 0, sizeof(frame));
     frame.type = type;
     frame.len = len;
-    frame.session_id = conn->session_id;
-    frame.seq = conn->tx_seq + 1U;
+    frame.session_id = conn->session.id;
     if ((payload != NULL) && (len > 0U) && (len <= PROTO_MAX_PAYLOAD)) {
         (void)memcpy(frame.payload, payload, len);
     }
 
-    /* Designdokument 5.2: Die Sequenznummer laeuft nie ueber. Ist der
-     * Maximalwert erreicht, wird nicht mehr gesendet und die Verbindung
-     * abgebaut; nach dem Neuaufbau beginnt sie mit neuer Session-ID bei 1. */
-    if ((conn->tx_seq < UINT32_MAX) &&
-        ((payload != NULL) || (len == 0U)) &&
-        (proto_encode(&frame, buf, sizeof(buf), &total) == 0)) {
-        ssize_t n = send(conn->fd, buf, total, MSG_NOSIGNAL | MSG_DONTWAIT);
-        if ((n >= 0) && ((size_t)n == total)) {
-            conn->tx_seq = frame.seq;
-            ok = true;
-        }
+    /* Designdokument 5.2: Die Sequenznummer laeuft nie ueber. Ist UINT32_MAX
+     * vergeben, liefert session_next_tx_seq einen Fehler und die Verbindung
+     * wird abgebaut; nach dem Neuaufbau beginnt sie mit neuer Session-ID bei 1. */
+    seq_rc = session_next_tx_seq(&conn->session, &frame.seq);
+    if ((seq_rc == SESSION_OK) && ((payload != NULL) || (len == 0U)) &&
+        (proto_encode(&frame, buf, sizeof(buf), &total) == 0) &&
+        (transport_send(&conn->link, buf, total, SEND_TIMEOUT_MS) == TRANSPORT_OK)) {
+        ok = true;
     }
     if (!ok) {
-        /* Teilweise gesendeter Frame waere nicht mehr synchron: Verbindung abbauen. */
-        conn_close(conn, (conn->tx_seq < UINT32_MAX) ? "Sendefehler"
-                                                     : "Sequenznummer ausgeschoepft");
+        /* Ein teilweise gesendeter Frame waere nicht mehr synchron: abbauen. */
+        conn_close(conn, (seq_rc == SESSION_ERR_EXHAUSTED) ? "Sequenznummer ausgeschoepft"
+                                                           : "Sendefehler");
     }
     return ok;
 }
@@ -201,12 +165,10 @@ static void handle_frame(connection_t *conn, comm_data_t *comm, const uint8_t *b
     bool accepted = false;
     bool invalid_command = false;
 
-    /* Reihenfolge: Tag, Session-ID, Sequenznummer, Wertebereich (SEC-02). */
+    /* Reihenfolge (SEC-02): zuerst das GCM-Tag (proto_decode), dann Session-ID
+     * und Sequenznummer (session_check_rx), zuletzt der Wertebereich. */
     if ((proto_decode(buf, len, &frame) == 0) &&
-        (frame.session_id == conn->session_id) &&
-        (frame.seq > conn->rx_last_seq)) {
-        conn->rx_last_seq = frame.seq;
-
+        (session_check_rx(&conn->session, frame.session_id, frame.seq) == SESSION_OK)) {
         switch (frame.type) {
         case MSG_HEARTBEAT:
             if (proto_level_valid(frame.payload[0])) {
@@ -246,181 +208,163 @@ static void handle_frame(connection_t *conn, comm_data_t *comm, const uint8_t *b
     }
 }
 
-static void receive_data(connection_t *conn, comm_data_t *comm)
+/* Wartet hoechstens timeout_ms auf Daten und verarbeitet alle vollstaendigen Frames. */
+static void receive_data(connection_t *conn, comm_data_t *comm, int32_t timeout_ms)
 {
-    ssize_t n = recv(conn->fd, &conn->rx[conn->rx_len], sizeof(conn->rx) - conn->rx_len,
-                     MSG_DONTWAIT);
+    uint8_t chunk[PROTO_STREAM_BUF_LEN];
+    size_t got = 0U;
+    size_t room = proto_stream_free(&conn->stream);
+    int32_t rc = TRANSPORT_ERR;
 
-    if (n > 0) {
-        size_t pos = 0U;
-        bool in_sync = true;
+    if (room > 0U) {
+        rc = transport_recv(&conn->link, chunk, (room < sizeof(chunk)) ? room : sizeof(chunk),
+                            &got, timeout_ms);
+    }
 
-        conn->rx_len += (size_t)n;
-        while (in_sync && ((conn->rx_len - pos) >= (size_t)PROTO_TYPE_LEN_BYTES)) {
-            size_t total = 0U;
-
-            if (proto_peek(&conn->rx[pos], &total) != 0) {
-                in_sync = false; /* unbekannter Typ oder falsche Laenge */
-            } else if ((conn->rx_len - pos) < total) {
-                break; /* Frame noch unvollstaendig */
-            } else {
-                handle_frame(conn, comm, &conn->rx[pos], total);
-                pos += total;
-            }
-        }
-
-        if (!in_sync) {
-            conn_close(conn, "Datenstrom nicht synchron");
-        } else if (pos > 0U) {
-            conn->rx_len -= pos;
-            (void)memmove(conn->rx, &conn->rx[pos], conn->rx_len);
-        } else {
-            /* nichts verbraucht */
-        }
-    } else if (n == 0) {
+    if (room == 0U) {
+        /* Puffer voll ohne vollstaendigen Frame: kann nur bei kaputtem Datenstrom passieren */
+        conn_close(conn, "Datenstrom nicht synchron");
+    } else if (rc == TRANSPORT_CLOSED) {
         conn_close(conn, "Gegenstelle hat geschlossen");
-    } else if ((errno != EAGAIN) && (errno != EWOULDBLOCK) && (errno != EINTR)) {
+    } else if ((rc != TRANSPORT_OK) || (proto_stream_push(&conn->stream, chunk, got) != 0)) {
         conn_close(conn, "Empfangsfehler");
     } else {
-        /* keine Daten vorhanden */
+        uint8_t frame[PROTO_MAX_FRAME];
+        size_t frame_len = 0U;
+        int32_t next = proto_stream_next(&conn->stream, frame, sizeof(frame), &frame_len);
+
+        while (next == PROTO_STREAM_FRAME) {
+            handle_frame(conn, comm, frame, frame_len);
+            next = proto_stream_next(&conn->stream, frame, sizeof(frame), &frame_len);
+        }
+        if (next == PROTO_STREAM_DESYNC) {
+            /* Abschnitt 2.8: unbekannter Typ oder falsche Laenge */
+            conn_close(conn, "Datenstrom nicht synchron");
+        }
     }
 }
 
-static void accept_connection(connection_t *conn)
+static void accept_connection(connection_t *conn, int32_t timeout_ms)
 {
-    int32_t fd = accept4(g_listen_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
-
-    if (fd >= 0) {
-        uint8_t rnd[4];
-
-        if (crypto_random(rnd, sizeof(rnd)) == 0) {
-            conn->fd = fd;
-            conn->session_id = ((uint32_t)rnd[0] << 24) | ((uint32_t)rnd[1] << 16) |
-                               ((uint32_t)rnd[2] << 8) | (uint32_t)rnd[3];
-            conn->tx_seq = 0U;
-            conn->rx_last_seq = 0U;
-            conn->rx_len = 0U;
-            conn->discarded = 0U;
+    if (transport_accept(&g_listener, &conn->link, timeout_ms) == TRANSPORT_OK) {
+        proto_stream_reset(&conn->stream);
+        conn->discarded = 0U;
+        if (session_start_server(&conn->session) != SESSION_OK) {
+            conn_close(conn, "keine Session-ID");
+        } else {
             (void)fprintf(stderr, "[comm] Verbindung aufgebaut, Session-ID %08" PRIx32 "\n",
-                          conn->session_id);
-            /* Pi 2 sendet zuerst einen STATUS mit der neuen Session-ID. */
+                          conn->session.id);
+            /* Pi 2 sendet zuerst einen STATUS mit der neuen Session-ID (T2). */
             if (send_status(conn)) {
                 conn->next_status_us = time_now_us() +
                                        ((uint64_t)CFG_STATUS_PERIOD_MS * TIME_US_PER_MS);
             }
+        }
+    }
+}
+
+/* --- Ablauf -------------------------------------------------------------- */
+
+/* Wartezeit fuer den naechsten Empfang: hoechstens 50 ms, aber nicht ueber
+ * den naechsten STATUS-Zeitpunkt hinaus. */
+static int32_t receive_timeout_ms(const connection_t *conn)
+{
+    const uint64_t max_us = (uint64_t)CFG_COMM_POLL_TIMEOUT_MS * TIME_US_PER_MS;
+    uint64_t now_us = time_now_us();
+    int32_t timeout_ms = CFG_COMM_POLL_TIMEOUT_MS;
+
+    if (conn->next_status_us <= now_us) {
+        timeout_ms = 0;
+    } else if ((conn->next_status_us - now_us) < max_us) {
+        timeout_ms = (int32_t)((conn->next_status_us - now_us) / TIME_US_PER_MS) + 1;
+    } else {
+        /* Standard-Timeout */
+    }
+    return timeout_ms;
+}
+
+/* SAF-09: Im Zustand SHUTDOWN wird das ACK erst gesendet, wenn die
+ * Motorsteuerung fuer eine Generation ab SHUTDOWN "Motor AUS" gemeldet hat.
+ * Bleibt das laenger als SHUTDOWN_MOTOR_WAIT_MS aus, wird kein ACK gesendet.
+ * Das ACK beantwortet nur ein STOP von Pi 1 (stop_received). Endet Pi 2 aus
+ * eigenem Grund (Signal), erhaelt Pi 1 nur den letzten STATUS mit SHUTDOWN. */
+static void handle_shutdown(connection_t *conn, shutdown_t *sd, bool stop_received)
+{
+    safety_state_t state;
+
+    shared_state_read(&state);
+    if ((state.state == STATE_SHUTDOWN) && !sd->done) {
+        motor_status_t motor;
+        bool motor_is_off;
+
+        if (!sd->seen) {
+            sd->seen = true;
+            sd->generation = state.generation;
+            sd->since_us = time_now_us();
+        }
+        shared_motor_read(&motor);
+        /* Differenz ueberlaufsicher: Generation liegt bei oder nach SHUTDOWN */
+        motor_is_off = (motor.applied_level == LEVEL_OFF) &&
+                       ((uint32_t)(motor.generation - sd->generation) < 0x80000000UL);
+
+        if (motor_is_off) {
+            /* Letzter STATUS (SHUTDOWN), danach ACK. Scheitert das Senden, ist
+             * die Verbindung bereits abgebaut und es gibt nichts zu bestaetigen. */
+            if (transport_is_open(&conn->link) && send_status(conn) && stop_received &&
+                !send_frame(conn, MSG_ACK, NULL, 0U)) {
+                (void)fprintf(stderr, "[comm] ACK konnte nicht gesendet werden\n");
+            }
+            sd->done = true;
+        } else if (time_age_us(time_now_us(), sd->since_us) >
+                   ((uint64_t)SHUTDOWN_MOTOR_WAIT_MS * TIME_US_PER_MS)) {
+            (void)fprintf(stderr, "[comm] Motor AUS nicht bestaetigt: kein ACK gesendet\n");
+            sd->done = true;
         } else {
-            (void)close(fd);
+            /* weiter auf die Rueckmeldung der Motorsteuerung warten */
+        }
+        if (sd->done) {
+            atomic_store(&g_shutdown_acked, true);
+        }
+    }
+}
+
+/* STATUS alle 100 ms (SAF-05); bei Verspaetung wird neu aufgesetzt. */
+static void send_periodic_status(connection_t *conn)
+{
+    const uint64_t period_us = (uint64_t)CFG_STATUS_PERIOD_MS * TIME_US_PER_MS;
+    uint64_t now_us = time_now_us();
+
+    if (transport_is_open(&conn->link) && (now_us >= conn->next_status_us) && send_status(conn)) {
+        conn->next_status_us += period_us;
+        if (conn->next_status_us <= now_us) {
+            conn->next_status_us = now_us + period_us;
         }
     }
 }
 
 void *bt_server_thread(void *arg)
 {
-    const uint64_t status_period_us = (uint64_t)CFG_STATUS_PERIOD_MS * TIME_US_PER_MS;
     connection_t conn;
     comm_data_t comm; /* einziger Schreiber von comm_data */
-    bool ack_done = false;
-    bool shutdown_seen = false;
-    uint32_t shutdown_generation = 0U;
-    uint64_t shutdown_since_us = 0U;
+    shutdown_t sd = { false, false, 0U, 0U };
 
     (void)arg;
     (void)memset(&conn, 0, sizeof(conn));
     (void)memset(&comm, 0, sizeof(comm));
-    conn.fd = -1;
+    transport_init(&conn.link);
+    session_reset(&conn.session);
+    proto_stream_reset(&conn.stream);
 
+    /* Kein Aufruf blockiert laenger als 50 ms; das Ausbleiben von Nachrichten
+     * bewertet die Safety-Logik ueber den Zeitstempel in comm_data. */
     while (shared_running()) {
-        struct pollfd pfd;
-        safety_state_t state;
-        int32_t timeout_ms = CFG_COMM_POLL_TIMEOUT_MS;
-        int32_t ready;
-
-        pfd.revents = 0;
-        pfd.events = POLLIN;
-        if (conn.fd >= 0) {
-            uint64_t now_us = time_now_us();
-
-            pfd.fd = conn.fd;
-            if (conn.next_status_us <= now_us) {
-                timeout_ms = 0;
-            } else if ((conn.next_status_us - now_us) <
-                       ((uint64_t)CFG_COMM_POLL_TIMEOUT_MS * TIME_US_PER_MS)) {
-                timeout_ms = (int32_t)((conn.next_status_us - now_us) / TIME_US_PER_MS) + 1;
-            } else {
-                /* Standard-Timeout */
-            }
+        if (transport_is_open(&conn.link)) {
+            receive_data(&conn, &comm, receive_timeout_ms(&conn));
         } else {
-            pfd.fd = g_listen_fd;
+            accept_connection(&conn, CFG_COMM_POLL_TIMEOUT_MS);
         }
-
-        /* Blockiert nie laenger als 50 ms; das Ausbleiben von Nachrichten
-         * bewertet die Safety-Logik ueber den Zeitstempel in comm_data. */
-        ready = poll(&pfd, 1U, timeout_ms);
-
-        if (conn.fd < 0) {
-            if ((ready > 0) && ((pfd.revents & POLLIN) != 0)) {
-                accept_connection(&conn);
-            }
-        } else if (ready > 0) {
-            if ((pfd.revents & POLLIN) != 0) {
-                receive_data(&conn, &comm);
-            } else if ((pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
-                conn_close(&conn, "Verbindungsfehler");
-            } else {
-                /* kein relevantes Ereignis */
-            }
-        } else {
-            /* Timeout oder EINTR */
-        }
-
-        shared_state_read(&state);
-        if ((state.state == STATE_SHUTDOWN) && !ack_done) {
-            motor_status_t motor;
-            bool motor_is_off;
-
-            if (!shutdown_seen) {
-                shutdown_seen = true;
-                shutdown_generation = state.generation;
-                shutdown_since_us = time_now_us();
-            }
-            /* SAF-09: ACK erst, wenn die Motorsteuerung fuer eine Generation ab
-             * SHUTDOWN "Motor AUS" zurueckgemeldet hat (Differenz ueberlaufsicher). */
-            shared_motor_read(&motor);
-            motor_is_off = (motor.applied_level == LEVEL_OFF) &&
-                           ((uint32_t)(motor.generation - shutdown_generation) < 0x80000000UL);
-
-            if (motor_is_off) {
-                /* Letzter STATUS (SHUTDOWN), danach ACK. Scheitert das Senden, ist
-                 * die Verbindung bereits abgebaut und es gibt nichts zu bestaetigen. */
-                if ((conn.fd >= 0) && send_status(&conn) &&
-                    !send_frame(&conn, MSG_ACK, NULL, 0U)) {
-                    (void)fprintf(stderr, "[comm] ACK konnte nicht gesendet werden\n");
-                }
-                ack_done = true;
-            } else if (time_age_us(time_now_us(), shutdown_since_us) >
-                       ((uint64_t)SHUTDOWN_MOTOR_WAIT_MS * TIME_US_PER_MS)) {
-                (void)fprintf(stderr, "[comm] Motor AUS nicht bestaetigt: kein ACK gesendet\n");
-                ack_done = true;
-            } else {
-                /* weiter auf die Rueckmeldung der Motorsteuerung warten */
-            }
-            if (ack_done) {
-                atomic_store(&g_shutdown_acked, true);
-            }
-        }
-
-        if (conn.fd >= 0) {
-            uint64_t now_us = time_now_us();
-
-            if (now_us >= conn.next_status_us) {
-                if (send_status(&conn)) {
-                    conn.next_status_us += status_period_us;
-                    if (conn.next_status_us <= now_us) {
-                        conn.next_status_us = now_us + status_period_us;
-                    }
-                }
-            }
-        }
+        handle_shutdown(&conn, &sd, comm.stop);
+        send_periodic_status(&conn);
     }
 
     conn_close(&conn, "Programmende");
