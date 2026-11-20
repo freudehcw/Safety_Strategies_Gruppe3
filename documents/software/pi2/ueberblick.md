@@ -25,8 +25,8 @@ Fällt Pi 1 oder die Verbindung aus, schaltet Pi 2 selbst ab.
 | `src/pi2_safety/pi2_config.h` | Pins, Takte, PWM-Stufen, Sicherheitsabstände, Prioritäten | Designdokument 2.13, SAF-07 |
 | `src/common/` | gemeinsamer Code mit Pi 1: Nachrichtenformat, AES-256-GCM, Session, Transport, Klartextnamen, Konstanten, Zeitbasis | Designdokument 2.8 |
 
-Weitere Erklärungen: [Safety-Logik](erklaerung_pi2_safety_logik.md), [Sensoren](erklaerung_pi2_sensoren.md),
-[Motor und Hardware](erklaerung_pi2_motor_hal.md), [Kommunikation](erklaerung_pi2_kommunikation.md).
+Weitere Erklärungen: [Safety-Logik](safety_logik.md), [Sensoren](sensoren.md),
+[Motor und Hardware](motor_hal.md), [Kommunikation](kommunikation.md).
 
 ## Threads
 
@@ -123,5 +123,5 @@ Speicherverwaltung.
 | 13 | Gemeinsamer Startzeitpunkt der Sensor-Threads (Ergänzung 3) | umgesetzt (`sensors_set_start_time()`), Echo-Timeout 25 ms | erledigt |
 | 14 | AES-256-GCM über OpenSSL | umgesetzt von Pi 1 in `crypto_utils.c`, Schlüssel wird in `main_pi2.c` geladen | erledigt |
 | 15 | Simulierter Pi 1 in C mit `common/` | `tools/pi1_sim.py` | Werkzeug |
-| 16 | `-Werror`, Abweichungen im README | `-Werror` gesetzt; Liste der Abweichungen in `documents/misra_konformitaet_pi2.md` statt im README | teilweise |
-| 17 | MISRA: Kategorie Mandatory | geprüft werden die neun Regeln aus `MISRA_C_verpflichtende_Regeln.pdf` (Festlegung der Gruppe) | entschieden |
+| 16 | `-Werror`, Abweichungen im README | `-Werror` gesetzt; Liste der Abweichungen in `misra_konformitaet.md` in diesem Ordner statt im README | teilweise |
+| 17 | MISRA: Kategorie Mandatory | geprüft werden die neun Regeln aus `documents/vorgaben/MISRA_C_verpflichtende_Regeln.pdf` (Festlegung der Gruppe) | entschieden |

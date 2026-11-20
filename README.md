@@ -111,7 +111,7 @@ make -j4 && ctest --output-on-failure
 ```
 
 ### Dokumentation
-Erklärungen zu den Modulen von Pi 2 (Aufgabe, Ablauf, Entscheidungen, typische Fehlerquellen) liegen in `documents/modules/`, beginnend mit `documents/modules/erklaerung_pi2_ueberblick.md`. Dort steht auch der Abgleich mit dem Auftrag `pi2_agent_prompt.md`. Die MISRA-Konformität ist in `documents/misra_konformitaet_pi2.md` beschrieben.
+Die Software-Dokumentation liegt in `documents/software/` (Einstieg: `documents/software/README.md`). Für Pi 2 beginnt sie mit `documents/software/pi2/ueberblick.md` (Aufgabe, Ablauf, Entscheidungen, typische Fehlerquellen, Abgleich mit dem Auftrag); die MISRA-Konformität steht in `documents/software/pi2/misra_konformitaet.md`.
 
 ### Noch offen
 *   **Sicherheitsabstände (30 / 50 / 80 cm) und PWM-Stufen** in `src/pi2_safety/pi2_config.h` sind vorläufig und müssen am realen Aufbau festgelegt werden (SAF-10).
@@ -121,6 +121,6 @@ Erklärungen zu den Modulen von Pi 2 (Aufgabe, Ablauf, Entscheidungen, typische 
 | Teil | Werkzeug und Modell | Erstellt | Prüfung |
 |---|---|---|---|
 | `src/common/`, `src/pi2_safety/`, `tests/test_pi2.c`, `tools/pi1_sim.py`, Abschnitt Pi 2 in `CMakeLists.txt` | Claude Code mit Claude Fable 5.2 | Quellcode, Kommentare und Unit-Tests | Build ohne Warnungen, 216 Prüfungen in den Unit-Tests, Simulationslauf gegen `tools/pi1_sim.py`, cppcheck mit MISRA-Addon. Durchsicht durch ein Gruppenmitglied: offen (Platzhalter `<Name>` in jeder Datei). |
-| `documents/modules/erklaerung_pi2_*.md`, `documents/misra_konformitaet_pi2.md`, Abschnitt Pi 2 in diesem README | Claude Code mit Claude Fable 5.2 | Text | Durchsicht durch ein Gruppenmitglied: offen. |
+| `documents/software/pi2/*.md`, Abschnitt Pi 2 in diesem README | Claude Code mit Claude Fable 5.2 | Text | Durchsicht durch ein Gruppenmitglied: offen. |
 
 Auf dem Raspberry Pi wurde der Code noch nicht gebaut oder getestet.

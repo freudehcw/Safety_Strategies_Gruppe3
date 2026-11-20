@@ -54,7 +54,7 @@ src/pi1_host/     main_pi1.c, options.c, pi1_config.h, shared.c, bt_client.c (Ko
 tools/mock_pi2/   mock_pi2.c (TCP, nutzt src/common/)
 tools/gen_psk.sh  Schlüssel aus /dev/urandom
 tests/            test_common.c, test_pi1.c (eigene kleine Assert-Makros)
-documents/modules/erklaerung_pi1_<modul>.md   (Ablage wie bei Pi 2)
+documents/software/pi1/<modul>.md             (Ablage wie bei Pi 2)
 ```
 
 `session` und `transport` sind rollenneutral (Client- und Server-Funktionen), damit Pi 2 sie nutzen kann. Ob
@@ -112,7 +112,7 @@ werden so bereitgestellt, dass Pi 2 sie nutzen kann; ob er sie übernimmt, entsc
 - Für den Kollegen wird eine kurze Notiz geschrieben: was sich ändert und warum.
 
 **C – MISRA:**
-- **Verbindlich** sind die neun Regeln aus `documents/MISRA_C_verpflichtende_Regeln.pdf`, ohne Ausnahme.
+- **Verbindlich** sind die neun Regeln aus `documents/vorgaben/MISRA_C_verpflichtende_Regeln.pdf`, ohne Ausnahme.
 - Die Kategorie „Mandatory“ von MISRA C:2012 ist für Pi 1 ein **zusätzliches Ziel**. Abweichungen davon
   werden im Code begründet und im README gesammelt.
 

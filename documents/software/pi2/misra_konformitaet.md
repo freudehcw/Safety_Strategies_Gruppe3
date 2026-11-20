@@ -1,6 +1,6 @@
 # MISRA C:2012 – Konformität der Pi-2-Software
 
-Geprüft gegen die neun verpflichtenden Regeln aus `MISRA_C_verpflichtende_Regeln.pdf`. Diese neun Regeln sind
+Geprüft gegen die neun verpflichtenden Regeln aus `documents/vorgaben/MISRA_C_verpflichtende_Regeln.pdf`. Diese neun Regeln sind
 für das Projekt maßgeblich (Festlegung der Gruppe), nicht die Kategorie „Mandatory“ von MISRA C:2012.
 Geltungsbereich: `src/common/`, `src/pi2_safety/`, `tests/`. Stand: 10.11.2026.
 
