@@ -61,12 +61,24 @@ endif()
 # ---------------------------------------------------------------
 # Gemeinsame Quellcode-Dateien (Pi 1 und Pi 2)
 # ---------------------------------------------------------------
+# OpenSSL (AES-256-GCM, EVP-Schnittstelle) fuer beide Pis
+find_package(OpenSSL REQUIRED)
+
 add_library(common STATIC
     src/common/crypto_utils.c
     src/common/protocol.c
+    src/common/proto_stream.c
+    src/common/session.c
     src/common/time_utils.c
+    src/common/transport.c
 )
 target_include_directories(common PUBLIC src/common)
+target_link_libraries(common PUBLIC OpenSSL::Crypto)
+if(BLUEZ_FOUND)
+    target_compile_definitions(common PRIVATE HAVE_BLUEZ)
+    target_include_directories(common PRIVATE ${BLUEZ_INCLUDE_DIRS})
+    target_link_libraries(common PUBLIC ${BLUEZ_LIBRARIES})
+endif()
 
 # ---------------------------------------------------------------
 # Raspberry Pi 2 (Safety/Steuerung)
@@ -119,27 +131,29 @@ target_compile_definitions(pi2_core_test PUBLIC SSM_TESTMODE)
 add_pi2_app(${PI2_APP_NAME}_test pi2_core_test)
 
 # ---------------------------------------------------------------
-# Raspberry Pi 1 (Host/Bedienung) - wird gebaut, sobald der Quellcode existiert
+# Raspberry Pi 1 (Host/Bedienung)
 # ---------------------------------------------------------------
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/pi1_host/main_pi1.c")
-    find_package(OpenSSL REQUIRED)
-    add_executable(${PI1_APP_NAME}
-        src/pi1_host/main_pi1.c
-        src/pi1_host/ui_lcd.c
-        src/pi1_host/logging.c
-        src/pi1_host/bt_client.c
-    )
-    target_link_libraries(${PI1_APP_NAME}
-        common
-        Threads::Threads
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        ${BLUEZ_LIBRARIES}
-        ${PIGPIO_LIBRARY}
-    )
-else()
-    message(STATUS "src/pi1_host/ fehlt noch - ${PI1_APP_NAME} wird nicht gebaut.")
-endif()
+# Alles ausser main_pi1.c als Bibliothek, damit die Unit-Tests es nutzen koennen.
+add_library(pi1_core STATIC
+    src/pi1_host/bt_client.c
+    src/pi1_host/input.c
+    src/pi1_host/lcd_console.c
+    src/pi1_host/lcd_i2c.c
+    src/pi1_host/logging.c
+    src/pi1_host/options.c
+    src/pi1_host/pi1_names.c
+    src/pi1_host/shared.c
+    src/pi1_host/ui_lcd.c
+)
+target_include_directories(pi1_core PUBLIC src/pi1_host)
+target_link_libraries(pi1_core PUBLIC common Threads::Threads)
+
+add_executable(${PI1_APP_NAME} src/pi1_host/main_pi1.c)
+target_link_libraries(${PI1_APP_NAME} pi1_core)
+
+# Simulierter Pi 2 (Testwerkzeug fuer Pi 1, TCP)
+add_executable(mock_pi2 tools/mock_pi2/mock_pi2.c)
+target_link_libraries(mock_pi2 common)
 
 # ---------------------------------------------------------------
 # Unit-Tests (hardwareunabhängig): ctest oder make test
@@ -148,3 +162,36 @@ enable_testing()
 add_executable(test_pi2 tests/test_pi2.c src/pi2_safety/hal_sim.c)
 target_link_libraries(test_pi2 pi2_core)
 add_test(NAME pi2_unit_tests COMMAND test_pi2)
+
+add_executable(test_common tests/test_common.c)
+target_link_libraries(test_common common)
+add_test(NAME common_unit_tests COMMAND test_common)
+
+add_executable(test_pi1 tests/test_pi1.c)
+target_link_libraries(test_pi1 pi1_core)
+add_test(NAME pi1_unit_tests COMMAND test_pi1)
+
+# ---------------------------------------------------------------
+# Statische Analyse: make cppcheck (cppcheck mit MISRA-Addon)
+# Geprueft werden src/common, src/pi1_host und tools/mock_pi2.
+# ---------------------------------------------------------------
+find_program(CPPCHECK_EXE cppcheck)
+if(CPPCHECK_EXE)
+    add_custom_target(cppcheck
+        COMMAND ${CPPCHECK_EXE}
+            --addon=misra
+            --enable=warning,style,performance,portability
+            --std=c11 -D_GNU_SOURCE -DHAVE_BLUEZ
+            --inline-suppr --error-exitcode=0
+            --suppress=missingIncludeSystem
+            -I ${CMAKE_SOURCE_DIR}/src/common
+            -I ${CMAKE_SOURCE_DIR}/src/pi1_host
+            ${CMAKE_SOURCE_DIR}/src/common
+            ${CMAKE_SOURCE_DIR}/src/pi1_host
+            ${CMAKE_SOURCE_DIR}/tools/mock_pi2
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "cppcheck mit MISRA-Addon"
+        VERBATIM)
+else()
+    message(STATUS "cppcheck nicht gefunden - Target 'cppcheck' fehlt")
+endif()

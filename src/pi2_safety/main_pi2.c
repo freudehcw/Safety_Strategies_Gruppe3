@@ -31,6 +31,8 @@
 #include <unistd.h>
 
 #include "bt_server.h"
+#include "config.h"
+#include "crypto_utils.h"
 #include "hal.h"
 #include "motor.h"
 #include "pi2_config.h"
@@ -352,6 +354,22 @@ int main(int argc, char **argv)
                               "Das Programm wurde nicht gestartet, der Motor bleibt AUS.\n");
         return EXIT_FAILURE;
     }
+    /* SEC-01: Pre-Shared-Key laden und AES-256-GCM initialisieren (OpenSSL EVP,
+     * https://www.openssl.org, siehe src/common/crypto_utils.c). Ohne gueltigen
+     * Schluessel wird nicht gestartet; die Ausgaenge bleiben unberuehrt. */
+    {
+        uint8_t key[CRYPTO_KEY_LEN];
+        int32_t key_rc = crypto_load_key_file(CFG_PSK_DEFAULT_PATH, key);
+
+        if ((key_rc != CRYPTO_KEY_OK) || (crypto_init(key) != 0)) {
+            (void)fprintf(stderr, "Fehler: %s (%s)\n", CFG_PSK_DEFAULT_PATH,
+                          (key_rc != CRYPTO_KEY_OK) ? crypto_key_error_text(key_rc)
+                                                    : "OpenSSL-Initialisierung fehlgeschlagen");
+            crypto_wipe(key, sizeof(key));
+            return EXIT_FAILURE;
+        }
+        crypto_wipe(key, sizeof(key)); /* Schluessel liegt jetzt nur noch in OpenSSL */
+    }
 
     /* 1. Hardware initialisieren; Motor bleibt AUS. */
     if (hal_init() != 0) {
@@ -535,6 +553,7 @@ int main(int argc, char **argv)
         }
     }
     bt_server_close();
+    crypto_cleanup();
 #ifdef SSM_TESTMODE
     {
         safety_state_t final_state;
