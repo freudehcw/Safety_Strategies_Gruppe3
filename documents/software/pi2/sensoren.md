@@ -1,6 +1,6 @@
 # Pi 2 – Sensoren (`sensors.c`)
 
-Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2), geprüft von: <Name>
+Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2 und Claude Opus 5.5), geprüft von: <Name>
 
 ## Aufgabe
 
@@ -31,7 +31,7 @@ P2 wird ohne Division gerechnet: `|Δd| × 1000 > 2 × Δt` mit Δt in µs.
 
 - **Zeitstempel ist der Beginn der Messung.** Das Datenalter (P4) wird damit eher zu groß als zu klein gerechnet.
 - **Bezugswert für P2 ist die letzte Messung, die P1 bestanden hat,** auch wenn sie selbst P2 verletzt hat
-  (Klarstellung 4 im Auftrag). Springt der Abstand wirklich, weil ein Objekt auftaucht, ist genau eine
+  (Festlegung der Gruppe, siehe [stand.md](stand.md)). Springt der Abstand wirklich, weil ein Objekt auftaucht, ist genau eine
   Messung ungültig und die nächste wieder gültig.
 - **Ohne Bezugswert wird P2 nicht geprüft und die Messung gilt.** Das betrifft die erste Messung nach dem
   Start und nach einem P1-Fehler.
@@ -44,12 +44,13 @@ P2 wird ohne Division gerechnet: `|Δd| × 1000 > 2 × Δt` mit Δt in µs.
 
 ## Stellen, an denen man Fehler leicht übersieht
 
-- Steht kein Objekt innerhalb von 4 m, kommt kein Echo und das System bleibt in FEHLER / SENSOR. Für die
-  Vorführung braucht es eine Rückwand im Messbereich.
+- Steht kein Objekt innerhalb von 4 m, kommt kein Echo, P1 schlägt fehl und das System bleibt in
+  FEHLER / SENSOR.
 - Bei 60 ms Messabstand erlaubt P2 höchstens 120 mm Änderung. Ein Objekt, das seitlich in den Strahl kommt,
   löst deshalb zuerst FEHLER / SENSOR und erst danach OBJEKT_STOPP aus. Der Motor ist in beiden Fällen aus.
 - Die Sensoren messen um 30 ms versetzt. Bewegt sich ein Objekt schnell, können d1 und d2 allein dadurch
-  um mehrere Zentimeter abweichen (bei 2 m/s um 6 cm) und P3 auslösen.
+  um mehrere Zentimeter abweichen (bei 2 m/s um 6 cm) und P3 auslösen. Liefern beide Sensoren denselben
+  falschen Wert, erkennt P3 das nicht (H6).
 - Nach einem verpassten Takt stimmt der Versatz von 30 ms nicht mehr genau, weil der Thread von der
   aktuellen Zeit aus neu aufsetzt.
 

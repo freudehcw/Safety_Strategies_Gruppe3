@@ -1,6 +1,6 @@
 # Pi 2 – Safety-Logik (`safety_logic.c`)
 
-Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2), geprüft von: <Name>
+Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2 und Claude Opus 5.5), geprüft von: <Name>
 
 ## Aufgabe
 
@@ -13,7 +13,7 @@ noch auf die Uhr oder auf gemeinsame Daten zu und lässt sich deshalb vollständ
 1. Der Thread bedient den Hardware-Watchdog, wenn die Motorsteuerung aktuell ist (siehe unten).
 2. Er kopiert `sensor_data[0]`, `sensor_data[1]` und `comm_data`.
 3. Er liest die monotone Zeit. Das geschieht nach dem Kopieren, damit kein Zeitstempel in der Zukunft liegt.
-4. `safety_evaluate()` entscheidet in der Reihenfolge des Designdokuments (Abschnitt 2.3):
+4. `safety_evaluate()` entscheidet in der Reihenfolge des Designdokuments (SAF-06, Abschnitt 2.3):
 
 | Schritt | Prüfung | Ergebnis bei Fehlschlag |
 |---|---|---|
@@ -33,13 +33,13 @@ noch auf die Uhr oder auf gemeinsame Daten zu und lässt sich deshalb vollständ
 - **Grundstellung ist FEHLER mit Motor AUS.** `safety_evaluate()` setzt das Ergebnis zuerst auf
   FEHLER / SENSOR / AUS. Eine Stufe wird nur im letzten Zweig eingetragen (SAF-01).
 - **Kein Speichern von Fehlern.** Der Zustand wird in jedem Zyklus neu bestimmt. Sind alle Bedingungen
-  erfüllt, läuft der Motor ohne Quittierung wieder an (SAF-11, Abschnitt 2.6).
+  erfüllt, läuft der Motor ohne Quittierung wieder an (SAF-11).
 - **SHUTDOWN bleibt.** `ctx->shutdown` wird nie zurückgesetzt.
-- **P3 zählt neue Messwerte, nicht Safety-Zyklen** (Klarstellung 5 im Auftrag). Jeder Messwert trägt einen
+- **P3 zählt neue Messwerte, nicht Safety-Zyklen** (Festlegung der Gruppe, siehe [stand.md](stand.md)). Jeder Messwert trägt einen
   Zähler `seq`. P3 wird nur bewertet, wenn beide Werte gültig sind und seit der letzten Bewertung mindestens
   ein Sensor einen neuen Wert geliefert hat. Zwei Bewertungen mit mehr als 5 cm Abweichung hintereinander
   verletzen P3, eine Bewertung ohne Abweichung setzt den Zähler zurück.
-- **Die Sicherheitsabstände stehen in `pi2_config.h`** und sind vorläufig: 30, 50 und 80 cm. Beim Start prüft
+- **Die Sicherheitsabstände stehen in `pi2_config.h`** (SAF-07) und sind vorläufig: 30, 50 und 80 cm. Beim Start prüft
   `safety_config_valid()`, dass sie mit der Stufe wachsen. Sonst startet das Programm nicht.
 - **Das Alter der Nachricht berechnet die Safety-Logik selbst** aus `comm_data.last_valid_us`. Hängt der
   Kommunikations-Thread, altert der Zeitstempel und es folgt FEHLER / KOMMUNIKATION.
@@ -66,7 +66,7 @@ Nach dem Reset sind die GPIOs Eingänge, und der Pull-down an STBY schaltet den 
 
 - Die Grenzen sind einschließlich: genau 300 ms, genau 150 ms, genau 5 cm und d_min = S sind noch zulässig.
 - Reaktionszeit bei Kommunikationsverlust: 300 ms Timeout plus höchstens ein Zyklus von 50 ms (SAF-05).
-- Ein hängender Sensor-Thread lässt `valid` auf `true` stehen. Erkannt wird er über das Datenalter (P4).
+- Ein hängender Sensor-Thread lässt `valid` auf `true` stehen. Erkannt wird er über das Datenalter (P4, H3).
 - Weil abwechselnd alle 30 ms ein neuer Messwert eintrifft, bewertet praktisch jeder Zyklus der Safety-Logik
   P3. Eine dauerhafte Abweichung führt deshalb nach zwei Zyklen zum Fehler, also nach rund 50 bis 100 ms.
 - Zählt eine Nachricht von Pi 1 als ungültiger Befehl, entwertet die Kommunikation `comm_data` sofort. Die
@@ -88,4 +88,6 @@ Rotors dagegen messen lässt (SAF-10). `safety_evaluate()` ist im Testmodus unve
 ## Tests
 
 `tests/test_pi2.c` prüft jede Zeile der Tabelle oben, die Grenzwerte, die Reihenfolge der Fehlercodes, den
-Wiederanlauf, alle drei Stufen, P3 mit einzeln eintreffenden Messwerten und die Watchdog-Bedingung. Aufruf: `ctest --output-on-failure` im Build-Verzeichnis.
+Wiederanlauf, alle drei Stufen, P3 mit einzeln eintreffenden Messwerten und die Watchdog-Bedingung.
+Aufruf: `ctest --output-on-failure` im Build-Verzeichnis. Welcher Test welchen Testfall abdeckt, steht im
+`README.md` (Abschnitt „Testfälle“).

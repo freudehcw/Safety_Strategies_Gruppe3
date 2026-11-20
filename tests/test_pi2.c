@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "crypto_utils.h"
 #include "motor.h"
 #include "protocol.h"
 #include "safety_logic.h"
@@ -607,6 +608,13 @@ static void test_protocol(void)
 
 int main(void)
 {
+    /* AES-256-GCM braucht einen Schluessel (crypto_utils.c); fester Testschluessel. */
+    static const uint8_t test_key[CRYPTO_KEY_LEN] = { 0x42U };
+
+    if (crypto_init(test_key) != 0) {
+        (void)printf("crypto_init fehlgeschlagen\n");
+        return 1;
+    }
     test_p1_range();
     test_p2_rate();
     test_normal_operation();
@@ -622,6 +630,7 @@ int main(void)
     test_watchdog_condition();
     test_motor_levels();
     test_protocol();
+    crypto_cleanup();
 
     (void)printf("%" PRId32 " Pruefungen, %" PRId32 " fehlgeschlagen\n", g_checks, g_failures);
     return (g_failures == 0) ? 0 : 1;

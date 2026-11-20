@@ -2,8 +2,9 @@
  * main_pi2.c - Raspberry Pi 2: Sensorerfassung, Safety-Logik, Motorsteuerung.
  *
  * Aufruf:
- *   pi2_app [--tcp PORT] [--no-watchdog]
+ *   pi2_app [--tcp PORT] [--key PFAD] [--no-watchdog]
  *     --tcp PORT     TCP auf 127.0.0.1 statt Bluetooth-RFCOMM (Entwicklung)
+ *     --key PFAD     Schluesseldatei (Standard /etc/ssm/psk.bin)
  *     --no-watchdog  Hardware-Watchdog nicht verwenden (nur Entwicklung)
  *
  * Testmodus: Wird mit SSM_TESTMODE gebaut (Ziel pi2_app_test), nimmt das
@@ -14,7 +15,7 @@
  * Zustandswechsel protokollieren -> bei Stop/Shutdown zuerst Motor AUS, dann
  * Threads und Programm beenden.
  *
- * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2),
+ * Erstellt mit Unterstuetzung eines Sprachmodells (Claude Code, Claude Fable 5.2 und Claude Opus 5.5),
  * geprueft von: <Name>
  */
 #include <errno.h>
@@ -31,8 +32,11 @@
 #include <unistd.h>
 
 #include "bt_server.h"
+#include "config.h"
+#include "crypto_utils.h"
 #include "hal.h"
 #include "motor.h"
+#include "names.h"
 #include "pi2_config.h"
 #include "protocol.h"
 #include "safety_logic.h"
@@ -62,6 +66,7 @@ typedef struct {
 
 typedef struct {
     bt_server_cfg_t comm;
+    const char_t *key_path;
     bool use_watchdog;
 } options_t;
 
@@ -114,24 +119,6 @@ static int32_t install_signal_handlers(void)
     return result;
 }
 
-static const char_t *state_name(uint8_t state)
-{
-    static const char_t *const names[] = { "INIT", "BETRIEB", "OBJEKT_STOPP", "FEHLER", "SHUTDOWN" };
-    return (state <= STATE_SHUTDOWN) ? names[state] : "?";
-}
-
-static const char_t *error_name(uint8_t error)
-{
-    static const char_t *const names[] = { "-", "SENSOR", "KOMMUNIKATION", "DATENALTER" };
-    return (error <= ERR_DATENALTER) ? names[error] : "?";
-}
-
-static const char_t *level_name(uint8_t level)
-{
-    static const char_t *const names[] = { "AUS", "LOW", "MEDIUM", "HIGH" };
-    return (level <= LEVEL_HIGH) ? names[level] : "?";
-}
-
 /* Protokolliert Zustandswechsel mit der monotonen Uhr (ausserhalb des
  * Safety-Logik-Threads), z. B. zur Messung von Reaktionszeiten. */
 static void log_state(const safety_state_t *state)
@@ -148,8 +135,8 @@ static void log_state(const safety_state_t *state)
                  "d1=%5" PRIu16 " mm d2=%5" PRIu16 " mm "
                  "letzte gueltige Nachricht=%" PRIu64 ".%03" PRIu64 " ms\n",
                  state->state_since_us / TIME_US_PER_MS, state->state_since_us % TIME_US_PER_MS,
-                 state_name(state->state), error_name(state->error),
-                 level_name(state->motor_level),
+                 name_state(state->state), name_error(state->error),
+                 name_level(state->motor_level),
                  s0.valid ? s0.distance_mm : (uint16_t)DIST_INVALID_MM,
                  s1.valid ? s1.distance_mm : (uint16_t)DIST_INVALID_MM,
                  comm.last_valid_us / TIME_US_PER_MS, comm.last_valid_us % TIME_US_PER_MS);
@@ -160,8 +147,8 @@ static void log_state(const safety_state_t *state)
     if (g_testlog != NULL) {
         (void)fprintf(g_testlog,
                       "%" PRIu64 ",%s,%s,%s,%" PRIu16 ",%" PRIu16 ",%" PRIu64 ",%" PRIu32 ",%" PRIu64 "\n",
-                      state->state_since_us, state_name(state->state), error_name(state->error),
-                      level_name(state->motor_level),
+                      state->state_since_us, name_state(state->state), name_error(state->error),
+                      name_level(state->motor_level),
                       s0.valid ? s0.distance_mm : (uint16_t)DIST_INVALID_MM,
                       s1.valid ? s1.distance_mm : (uint16_t)DIST_INVALID_MM,
                       comm.last_valid_us, state->overruns, state->max_late_us);
@@ -266,12 +253,17 @@ static bool parse_options(int32_t argc, char_t *const argv[], options_t *options
 
     options->comm.use_tcp = false;
     options->comm.tcp_port = 0U;
+    options->key_path = CFG_PSK_DEFAULT_PATH;
     options->use_watchdog = true;
 
     while (ok && (a < argc)) {
         if ((strcmp(argv[a], "--tcp") == 0) && ((a + 1) < argc)) {
             ok = parse_port(argv[a + 1], &options->comm.tcp_port);
             options->comm.use_tcp = ok;
+            a += 2;
+        } else if ((strcmp(argv[a], "--key") == 0) && ((a + 1) < argc) &&
+                   (argv[a + 1][0] != '\0')) {
+            options->key_path = argv[a + 1];
             a += 2;
         } else if (strcmp(argv[a], "--no-watchdog") == 0) {
             options->use_watchdog = false;
@@ -310,6 +302,315 @@ static void start_thread(thread_desc_t *desc)
     }
 }
 
+/* --- Start ---------------------------------------------------------------- */
+
+/* Prueft alles, was vor dem ersten Hardwarezugriff feststehen muss. Bei einem
+ * Fehler wird nicht gestartet; die Ausgaenge bleiben unberuehrt. */
+static bool check_preconditions(const options_t *options)
+{
+    bool ok = false;
+
+    if (!safety_config_valid()) {
+        /* SAF-07: Die Sicherheitsabstaende muessen mit der Stufe wachsen. */
+        (void)fprintf(stderr, "Fehler: Konfiguration ungueltig, verlangt ist "
+                              "0 < S_LOW < S_MEDIUM < S_HIGH (pi2_config.h)\n");
+    } else if (!hal_is_simulation() && (geteuid() != 0)) {
+        /* Reale Hardware braucht Root-Rechte (GPIO, SCHED_FIFO, mlockall, Watchdog). */
+        (void)fprintf(stderr, "Fehler: Root-Rechte noetig (Start mit sudo). "
+                              "Das Programm wurde nicht gestartet, der Motor bleibt AUS.\n");
+    } else {
+        /* SEC-01: Pre-Shared-Key laden und AES-256-GCM initialisieren (OpenSSL EVP,
+         * https://www.openssl.org, siehe src/common/crypto_utils.c). */
+        uint8_t key[CRYPTO_KEY_LEN];
+        int32_t key_rc = crypto_load_key_file(options->key_path, key);
+
+        if ((key_rc != CRYPTO_KEY_OK) || (crypto_init(key) != 0)) {
+            (void)fprintf(stderr, "Fehler: %s (%s)\n", options->key_path,
+                          (key_rc != CRYPTO_KEY_OK) ? crypto_key_error_text(key_rc)
+                                                    : "OpenSSL-Initialisierung fehlgeschlagen");
+        } else {
+            ok = true;
+        }
+        crypto_wipe(key, sizeof(key)); /* Schluessel liegt danach nur noch in OpenSSL */
+    }
+    return ok;
+}
+
+/* Gibt bei einem Startfehler alles frei, was bis dahin angelegt wurde. */
+static void release_after_init_failure(bool comm_open)
+{
+    if (comm_open) {
+        bt_server_close();
+    }
+    if (hal_shutdown() != 0) {
+        (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
+    }
+    crypto_cleanup();
+}
+
+/* Sperrt den Speicher (keine Verzoegerung durch Auslagern). Nur mit root:
+ * ohne root wuerde das Limit RLIMIT_MEMLOCK spaetere Allokationen (z. B.
+ * Thread-Stacks) fehlschlagen lassen. Auf realer Hardware ist ein
+ * Fehlschlag ein Startfehler, in der Simulation nur eine Warnung. */
+static bool lock_memory(void)
+{
+    bool ok = true;
+
+    if ((geteuid() != 0) || (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)) {
+        if (hal_is_simulation()) {
+            (void)fprintf(stderr, "Warnung: Speicher nicht gesperrt (mlockall, root noetig)\n");
+        } else {
+            (void)fprintf(stderr, "Fehler: Speicher konnte nicht gesperrt werden (mlockall)\n");
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+/* Oeffnet den Hardware-Watchdog direkt vor dem Start der Threads, damit die
+ * Safety-Logik ihn sofort bedient. In der Simulation gibt es keinen. */
+static bool open_watchdog(const options_t *options)
+{
+    bool ok = true;
+
+    if (hal_is_simulation()) {
+        (void)printf("Hardware-Watchdog: nicht aktiv (Simulation)\n");
+    } else if (!options->use_watchdog) {
+        (void)fprintf(stderr, "WARNUNG: Hardware-Watchdog abgeschaltet (--no-watchdog); "
+                              "bei einem Absturz kann der Motor weiterlaufen\n");
+    } else if (watchdog_open() != 0) {
+        (void)fprintf(stderr, "Fehler: Hardware-Watchdog (%s) nicht verfuegbar. Moegliche Ursachen: "
+                              "keine Root-Rechte, dtparam=watchdog=on fehlt oder systemd "
+                              "verwendet ihn bereits (RuntimeWatchdogSec)\n", WATCHDOG_DEVICE);
+        ok = false;
+    } else {
+        (void)printf("Hardware-Watchdog: aktiv, Timeout %" PRId32 " s\n", (int32_t)WATCHDOG_TIMEOUT_S);
+    }
+    return ok;
+}
+
+/* Initialisierung in der Reihenfolge von SAF-02: zuerst Hardware mit Motor
+ * AUS, dann Signale, gemeinsame Daten, Kommunikation, Speicher, Watchdog.
+ * Bei einem Fehler ist danach alles wieder freigegeben. */
+static bool init_system(const options_t *options)
+{
+    bool ok = false;
+
+    if (hal_init() != 0) {
+        (void)fprintf(stderr, "Fehler: Hardware-Initialisierung (%s) fehlgeschlagen\n", hal_name());
+        crypto_cleanup();
+    } else if ((hal_motor_off() != 0) || (install_signal_handlers() != 0) || (shared_init() != 0)) {
+        (void)fprintf(stderr, "Fehler: Initialisierung fehlgeschlagen (Motor AUS, "
+                              "Signal-Handler oder gemeinsame Daten)\n");
+        release_after_init_failure(false);
+    } else if (bt_server_init(&options->comm) != 0) {
+        (void)fprintf(stderr, "Fehler: Kommunikation (%s) konnte nicht gestartet werden\n",
+                      options->comm.use_tcp ? "TCP" : "RFCOMM");
+        release_after_init_failure(false);
+    } else if (!lock_memory() || !open_watchdog(options)) {
+        release_after_init_failure(true);
+    } else {
+        ok = true;
+    }
+    return ok;
+}
+
+/* Startet alle Threads. false, wenn einer nicht startet oder auf realer
+ * Hardware SCHED_FIFO fehlt (dann ist der 50-ms-Zyklus nicht gesichert). */
+static bool start_all_threads(thread_desc_t threads[], size_t count)
+{
+    bool all_started = true;
+    bool all_realtime = true;
+    bool ok = true;
+    size_t i;
+
+    /* Beide Sensor-Threads erhalten denselben Startzeitpunkt. */
+    sensors_set_start_time(time_now_us() + ((uint64_t)SENSOR_START_DELAY_MS * TIME_US_PER_MS));
+    for (i = 0U; i < count; i++) {
+        start_thread(&threads[i]);
+        all_started = all_started && threads[i].started;
+        all_realtime = all_realtime && threads[i].realtime;
+    }
+    if (!all_started) {
+        ok = false;
+    } else if (!all_realtime) {
+        if (hal_is_simulation()) {
+            (void)fprintf(stderr, "Warnung: SCHED_FIFO nicht moeglich (root noetig); "
+                                  "Zeitverhalten nicht garantiert\n");
+        } else {
+            (void)fprintf(stderr, "Fehler: SCHED_FIFO konnte nicht gesetzt werden; "
+                                  "das Programm wird mit Motor AUS beendet\n");
+            ok = false;
+        }
+    } else {
+        /* alle Threads laufen mit SCHED_FIFO */
+    }
+    if (!ok) {
+        shared_request_stop();
+    }
+    return ok;
+}
+
+/* --- Betrieb --------------------------------------------------------------- */
+
+/* Zustand der Hauptschleife zwischen zwei Durchlaeufen. */
+typedef struct {
+    uint32_t logged_transitions;
+    uint32_t logged_off_failures;
+    uint64_t signal_since_us;
+#ifdef SSM_TESTMODE
+    bool stdin_open;
+    uint32_t logged_overruns;
+#endif
+} main_loop_t;
+
+/* Wartet einen Durchlauf (10 ms); im Testmodus werden dabei Konsolenbefehle gelesen. */
+static void wait_one_round(main_loop_t *loop)
+{
+#ifdef SSM_TESTMODE
+    if (loop->stdin_open) {
+        struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
+
+        if (poll(&pfd, 1U, MAIN_POLL_MS) > 0) {
+            char_t line[64];
+            if (fgets(line, (int32_t)sizeof(line), stdin) != NULL) {
+                handle_console_line(line);
+            } else {
+                loop->stdin_open = false;
+            }
+        }
+    } else {
+        time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
+    }
+#else
+    (void)loop;
+    time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
+#endif
+}
+
+/* Ein Durchlauf der Hauptschleife: Signale, Fehler der Motorsteuerung und
+ * Zustandswechsel auswerten. Liefert false, sobald das Programm enden soll;
+ * *failed wird bei einem Fehler gesetzt. */
+static bool main_loop_round(main_loop_t *loop, bool *failed)
+{
+    safety_state_t state;
+    uint32_t off_failures;
+    bool keep_running = true;
+
+    wait_one_round(loop);
+
+    if ((g_signal_received != 0) && (loop->signal_since_us == 0U)) {
+        shared_request_stop();
+        loop->signal_since_us = time_now_us();
+    }
+
+    off_failures = motor_off_failures();
+    if (off_failures != loop->logged_off_failures) {
+        loop->logged_off_failures = off_failures;
+        *failed = true;
+        (void)fprintf(stderr, "FEHLER: Motor AUS konnte nicht gesetzt werden (%" PRIu32 "x)\n",
+                      off_failures);
+    }
+
+    shared_state_read(&state);
+    if (state.transitions != loop->logged_transitions) {
+        loop->logged_transitions = state.transitions;
+        log_state(&state);
+    }
+#ifdef SSM_TESTMODE
+    /* Zyklusueberschreitungen der Safety-Logik melden (SAF-06) */
+    if (state.overruns != loop->logged_overruns) {
+        loop->logged_overruns = state.overruns;
+        (void)printf("Safety-Logik: %" PRIu32 " Zyklusueberschreitung(en), groesste Verspaetung "
+                     "%" PRIu64 " us\n", state.overruns, state.max_late_us);
+        log_state(&state);
+    }
+#endif
+    if (state.state == STATE_SHUTDOWN) {
+        keep_running = false;
+    } else if ((loop->signal_since_us != 0U) &&
+               (time_age_us(time_now_us(), loop->signal_since_us) >
+                ((uint64_t)SIGNAL_GRACE_MS * TIME_US_PER_MS))) {
+        /* Reagiert die Safety-Logik nicht auf die Stop-Anforderung, trotzdem beenden. */
+        *failed = true;
+        keep_running = false;
+    } else {
+        /* weiterlaufen */
+    }
+    return keep_running;
+}
+
+#ifdef SSM_TESTMODE
+static void testmode_begin(main_loop_t *loop)
+{
+    (void)printf("TESTMODUS: Fehlereinspeisung aktiv, nicht fuer den normalen Betrieb\n");
+    print_console_help();
+    open_testlog();
+    /* Ungepuffert, damit poll() auf stdin keine bereits gelesenen Zeilen uebersieht. */
+    if (setvbuf(stdin, NULL, _IONBF, 0) == 0) {
+        loop->stdin_open = true;
+    } else {
+        (void)fprintf(stderr, "Warnung: Testkonsole nicht verfuegbar\n");
+    }
+}
+
+static void testmode_end(void)
+{
+    safety_state_t final_state;
+
+    shared_state_read(&final_state);
+    (void)printf("Safety-Logik: %" PRIu32 " Zyklen, %" PRIu32 " Ueberschreitung(en), "
+                 "groesste Verspaetung %" PRIu64 " us\n",
+                 final_state.generation, final_state.overruns, final_state.max_late_us);
+    close_testlog();
+}
+#endif
+
+/* --- Beenden --------------------------------------------------------------- */
+
+/* SAF-09: zuerst Motor AUS, dann auf das ACK der Kommunikation warten, erst
+ * danach Threads beenden und Ressourcen freigeben. Liefert false bei Fehler. */
+static bool shutdown_system(thread_desc_t threads[], size_t count)
+{
+    bool ok = true;
+    uint64_t deadline_us;
+    size_t i;
+
+    if (hal_motor_off() != 0) {
+        (void)fprintf(stderr, "FEHLER: Motor AUS konnte nicht gesetzt werden\n");
+        ok = false;
+    }
+    deadline_us = time_now_us() + ((uint64_t)SHUTDOWN_ACK_WAIT_MS * TIME_US_PER_MS);
+    while (!bt_server_shutdown_acked() && (time_now_us() < deadline_us)) {
+        time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
+    }
+    shared_set_running(false);
+    for (i = 0U; i < count; i++) {
+        if (threads[i].started && (pthread_join(threads[i].handle, NULL) != 0)) {
+            (void)fprintf(stderr, "Fehler: Thread '%s' nicht sauber beendet\n", threads[i].name);
+            ok = false;
+        }
+    }
+    bt_server_close();
+    crypto_cleanup();
+#ifdef SSM_TESTMODE
+    testmode_end();
+#endif
+    if ((hal_motor_off() != 0) || (hal_shutdown() != 0) || (motor_off_failures() != 0U)) {
+        /* Der Watchdog bleibt absichtlich offen: Ohne "Magic Close" setzt er
+         * den Pi nach dem Programmende zurueck und der Motor wird stromlos. */
+        (void)fprintf(stderr, "FEHLER: Motor AUS bzw. Hardware-Freigabe fehlgeschlagen\n");
+        ok = false;
+    } else if (watchdog_close() != 0) {
+        (void)fprintf(stderr, "FEHLER: Watchdog nicht ordnungsgemaess geschlossen; "
+                              "der Pi wird zurueckgesetzt\n");
+        ok = false;
+    } else {
+        (void)printf("Pi 2 beendet, Motor AUS\n");
+    }
+    return ok;
+}
+
 /* Dir 4.6 Ausnahmen 2-4: Signatur von main. */
 int main(int argc, char **argv)
 {
@@ -322,241 +623,38 @@ int main(int argc, char **argv)
     };
     const size_t thread_count = sizeof(threads) / sizeof(threads[0]);
     options_t options;
-#ifdef SSM_TESTMODE
-    bool stdin_open = false;
-    uint32_t logged_overruns = 0U;
-#endif
-    bool all_started = true;
-    bool all_realtime = true;
-    bool running = true;
-    uint32_t logged_transitions = 0U;
-    uint32_t logged_off_failures = 0U;
-    uint64_t signal_since_us = 0U;
-    int32_t exit_code = EXIT_SUCCESS;
-    size_t i;
+    main_loop_t loop;
+    bool failed = false;
+    bool running;
 
     if (!parse_options(argc, argv, &options)) {
-        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--no-watchdog]\n", argv[0]);
+        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--key PFAD] [--no-watchdog]\n", argv[0]);
         return EXIT_FAILURE;
     }
-    /* SAF-07: Die Sicherheitsabstaende muessen mit der Stufe wachsen. */
-    if (!safety_config_valid()) {
-        (void)fprintf(stderr, "Fehler: Konfiguration ungueltig, verlangt ist "
-                              "0 < S_LOW < S_MEDIUM < S_HIGH (pi2_config.h)\n");
+    /* 1. Voraussetzungen und Initialisierung; der Motor bleibt AUS (SAF-02). */
+    if (!check_preconditions(&options) || !init_system(&options)) {
         return EXIT_FAILURE;
     }
-    /* Reale Hardware braucht Root-Rechte (GPIO, SCHED_FIFO, mlockall, Watchdog).
-     * Ohne sie wird nicht gestartet; die Ausgaenge bleiben unberuehrt. */
-    if (!hal_is_simulation() && (geteuid() != 0)) {
-        (void)fprintf(stderr, "Fehler: Root-Rechte noetig (Start mit sudo). "
-                              "Das Programm wurde nicht gestartet, der Motor bleibt AUS.\n");
-        return EXIT_FAILURE;
-    }
-
-    /* 1. Hardware initialisieren; Motor bleibt AUS. */
-    if (hal_init() != 0) {
-        (void)fprintf(stderr, "Fehler: Hardware-Initialisierung (%s) fehlgeschlagen\n", hal_name());
-        return EXIT_FAILURE;
-    }
-    if ((hal_motor_off() != 0) || (install_signal_handlers() != 0) || (shared_init() != 0)) {
-        (void)fprintf(stderr, "Fehler: Initialisierung fehlgeschlagen (Motor AUS, "
-                              "Signal-Handler oder gemeinsame Daten)\n");
-        if (hal_shutdown() != 0) {
-            (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
-        }
-        return EXIT_FAILURE;
-    }
-    if (bt_server_init(&options.comm) != 0) {
-        (void)fprintf(stderr, "Fehler: Kommunikation (%s) konnte nicht gestartet werden\n",
-                      options.comm.use_tcp ? "TCP" : "RFCOMM");
-        if (hal_shutdown() != 0) {
-            (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
-        }
-        return EXIT_FAILURE;
-    }
-    /* Speicher sperren (keine Verzoegerung durch Auslagern). Nur mit root:
-     * ohne root wuerde das Limit RLIMIT_MEMLOCK spaetere Allokationen
-     * (z. B. Thread-Stacks) fehlschlagen lassen. Auf realer Hardware ist ein
-     * Fehlschlag ein Startfehler, in der Simulation nur eine Warnung. */
-    if ((geteuid() != 0) || (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)) {
-        if (hal_is_simulation()) {
-            (void)fprintf(stderr, "Warnung: Speicher nicht gesperrt (mlockall, root noetig)\n");
-        } else {
-            (void)fprintf(stderr, "Fehler: Speicher konnte nicht gesperrt werden (mlockall)\n");
-            bt_server_close();
-            if (hal_shutdown() != 0) {
-                (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
-            }
-            return EXIT_FAILURE;
-        }
-    }
-
     (void)printf("Pi 2 gestartet: HAL=%s, Transport=%s\n", hal_name(),
                  options.comm.use_tcp ? "TCP" : "RFCOMM");
+
+    (void)memset(&loop, 0, sizeof(loop));
 #ifdef SSM_TESTMODE
-    (void)printf("TESTMODUS: Fehlereinspeisung aktiv, nicht fuer den normalen Betrieb\n");
-    print_console_help();
-    open_testlog();
-    /* Ungepuffert, damit poll() auf stdin keine bereits gelesenen Zeilen uebersieht. */
-    if (setvbuf(stdin, NULL, _IONBF, 0) == 0) {
-        stdin_open = true;
-    } else {
-        (void)fprintf(stderr, "Warnung: Testkonsole nicht verfuegbar\n");
-    }
+    testmode_begin(&loop);
 #endif
 
-    /* Hardware-Watchdog: direkt vor dem Start der Threads oeffnen, damit die
-     * Safety-Logik ihn sofort bedient. In der Simulation gibt es keinen. */
-    if (hal_is_simulation()) {
-        (void)printf("Hardware-Watchdog: nicht aktiv (Simulation)\n");
-    } else if (!options.use_watchdog) {
-        (void)fprintf(stderr, "WARNUNG: Hardware-Watchdog abgeschaltet (--no-watchdog); "
-                              "bei einem Absturz kann der Motor weiterlaufen\n");
-    } else if (watchdog_open() != 0) {
-        (void)fprintf(stderr, "Fehler: Hardware-Watchdog (%s) nicht verfuegbar. Moegliche Ursachen: "
-                              "keine Root-Rechte, dtparam=watchdog=on fehlt oder systemd "
-                              "verwendet ihn bereits (RuntimeWatchdogSec)\n", WATCHDOG_DEVICE);
-        bt_server_close();
-        if (hal_shutdown() != 0) {
-            (void)fprintf(stderr, "Fehler: Hardware konnte nicht freigegeben werden\n");
-        }
-        return EXIT_FAILURE;
-    } else {
-        (void)printf("Hardware-Watchdog: aktiv, Timeout %" PRId32 " s\n", (int32_t)WATCHDOG_TIMEOUT_S);
-    }
-
-    /* 2. Threads starten. Beide Sensor-Threads erhalten denselben Startzeitpunkt. */
-    sensors_set_start_time(time_now_us() + ((uint64_t)SENSOR_START_DELAY_MS * TIME_US_PER_MS));
-    for (i = 0U; i < thread_count; i++) {
-        start_thread(&threads[i]);
-        all_started = all_started && threads[i].started;
-        all_realtime = all_realtime && threads[i].realtime;
-    }
-    if (!all_started) {
-        shared_request_stop();
-        exit_code = EXIT_FAILURE;
-        running = false;
-    } else if (!all_realtime) {
-        if (hal_is_simulation()) {
-            (void)fprintf(stderr, "Warnung: SCHED_FIFO nicht moeglich (root noetig); "
-                                  "Zeitverhalten nicht garantiert\n");
-        } else {
-            /* Ohne Echtzeit-Prioritaet ist der 50-ms-Zyklus nicht gesichert. */
-            (void)fprintf(stderr, "Fehler: SCHED_FIFO konnte nicht gesetzt werden; "
-                                  "das Programm wird mit Motor AUS beendet\n");
-            shared_request_stop();
-            exit_code = EXIT_FAILURE;
-            running = false;
-        }
-    } else {
-        /* alle Threads laufen mit SCHED_FIFO */
-    }
+    /* 2. Threads starten. */
+    running = start_all_threads(threads, thread_count);
+    failed = !running;
 
     /* 3. Hauptschleife: Zustandswechsel protokollieren, Testkonsole bedienen. */
     while (running) {
-        safety_state_t state;
-        uint32_t off_failures;
-
-#ifdef SSM_TESTMODE
-        if (stdin_open) {
-            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
-
-            if (poll(&pfd, 1U, MAIN_POLL_MS) > 0) {
-                char_t line[64];
-                if (fgets(line, (int32_t)sizeof(line), stdin) != NULL) {
-                    handle_console_line(line);
-                } else {
-                    stdin_open = false;
-                }
-            }
-        } else {
-            time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
-        }
-#else
-        time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
-#endif
-
-        if ((g_signal_received != 0) && (signal_since_us == 0U)) {
-            shared_request_stop();
-            signal_since_us = time_now_us();
-        }
-
-        off_failures = motor_off_failures();
-        if (off_failures != logged_off_failures) {
-            logged_off_failures = off_failures;
-            exit_code = EXIT_FAILURE;
-            (void)fprintf(stderr, "FEHLER: Motor AUS konnte nicht gesetzt werden (%" PRIu32 "x)\n",
-                          off_failures);
-        }
-
-        shared_state_read(&state);
-        if (state.transitions != logged_transitions) {
-            logged_transitions = state.transitions;
-            log_state(&state);
-        }
-#ifdef SSM_TESTMODE
-        /* Zyklusueberschreitungen der Safety-Logik melden (SAF-06) */
-        if (state.overruns != logged_overruns) {
-            logged_overruns = state.overruns;
-            (void)printf("Safety-Logik: %" PRIu32 " Zyklusueberschreitung(en), groesste Verspaetung "
-                         "%" PRIu64 " us\n", state.overruns, state.max_late_us);
-            log_state(&state);
-        }
-#endif
-        if (state.state == STATE_SHUTDOWN) {
-            running = false;
-        } else if ((signal_since_us != 0U) &&
-                   (time_age_us(time_now_us(), signal_since_us) >
-                    ((uint64_t)SIGNAL_GRACE_MS * TIME_US_PER_MS))) {
-            /* Reagiert die Safety-Logik nicht auf die Stop-Anforderung, trotzdem beenden. */
-            exit_code = EXIT_FAILURE;
-            running = false;
-        } else {
-            /* weiterlaufen */
-        }
+        running = main_loop_round(&loop, &failed);
     }
 
-    /* 4. Zuerst Motor AUS (SAF-09), erst danach Threads beenden. */
-    if (hal_motor_off() != 0) {
-        (void)fprintf(stderr, "FEHLER: Motor AUS konnte nicht gesetzt werden\n");
-        exit_code = EXIT_FAILURE;
+    /* 4. Kontrolliert beenden (SAF-09). */
+    if (!shutdown_system(threads, thread_count)) {
+        failed = true;
     }
-    {
-        uint64_t deadline_us = time_now_us() + ((uint64_t)SHUTDOWN_ACK_WAIT_MS * TIME_US_PER_MS);
-        while (!bt_server_shutdown_acked() && (time_now_us() < deadline_us)) {
-            time_sleep_until_us(time_now_us() + ((uint64_t)MAIN_POLL_MS * TIME_US_PER_MS));
-        }
-    }
-    shared_set_running(false);
-    for (i = 0U; i < thread_count; i++) {
-        if (threads[i].started && (pthread_join(threads[i].handle, NULL) != 0)) {
-            (void)fprintf(stderr, "Fehler: Thread '%s' nicht sauber beendet\n", threads[i].name);
-            exit_code = EXIT_FAILURE;
-        }
-    }
-    bt_server_close();
-#ifdef SSM_TESTMODE
-    {
-        safety_state_t final_state;
-
-        shared_state_read(&final_state);
-        (void)printf("Safety-Logik: %" PRIu32 " Zyklen, %" PRIu32 " Ueberschreitung(en), "
-                     "groesste Verspaetung %" PRIu64 " us\n",
-                     final_state.generation, final_state.overruns, final_state.max_late_us);
-        close_testlog();
-    }
-#endif
-    if ((hal_motor_off() != 0) || (hal_shutdown() != 0) || (motor_off_failures() != 0U)) {
-        /* Der Watchdog bleibt absichtlich offen: Ohne "Magic Close" setzt er
-         * den Pi nach dem Programmende zurueck und der Motor wird stromlos. */
-        (void)fprintf(stderr, "FEHLER: Motor AUS bzw. Hardware-Freigabe fehlgeschlagen\n");
-        exit_code = EXIT_FAILURE;
-    } else if (watchdog_close() != 0) {
-        (void)fprintf(stderr, "FEHLER: Watchdog nicht ordnungsgemaess geschlossen; "
-                              "der Pi wird zurueckgesetzt\n");
-        exit_code = EXIT_FAILURE;
-    } else {
-        (void)printf("Pi 2 beendet, Motor AUS\n");
-    }
-    return exit_code;
+    return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
