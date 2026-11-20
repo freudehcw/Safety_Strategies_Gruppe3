@@ -27,9 +27,10 @@ Zum Einlesen in dieser Reihenfolge:
 
 | Datei | Inhalt |
 |---|---|
-| [ueberblick.md](pi2/ueberblick.md) | Module, Threads, gemeinsame Daten, Ablauf, Abgleich mit dem Auftrag |
+| [ueberblick.md](pi2/ueberblick.md) | Module, Begriffe, Threads, gemeinsame Daten, Ablauf |
 | [safety_logik.md](pi2/safety_logik.md) | Safety-Entscheidung, P3, P4, Zustände, Watchdog-Bedingung |
 | [sensoren.md](pi2/sensoren.md) | Sensor-Threads, P1, P2, Testmodus |
 | [motor_hal.md](pi2/motor_hal.md) | Motorsteuerung, Hardware-Schicht, Hardware-Watchdog |
 | [kommunikation.md](pi2/kommunikation.md) | Kommunikations-Thread, Nachrichtenprüfung, STOP und ACK |
 | [misra_konformitaet.md](pi2/misra_konformitaet.md) | Nachweis der neun verpflichtenden MISRA-Regeln |
+| [stand.md](pi2/stand.md) | offene Punkte, Abgleich mit dem Auftrag |

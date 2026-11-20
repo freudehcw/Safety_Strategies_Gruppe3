@@ -110,17 +110,31 @@ cd build
 make -j4 && ctest --output-on-failure
 ```
 
-### Dokumentation
-Die Software-Dokumentation liegt in `documents/software/` (Einstieg: `documents/software/README.md`). Für Pi 2 beginnt sie mit `documents/software/pi2/ueberblick.md` (Aufgabe, Ablauf, Entscheidungen, typische Fehlerquellen, Abgleich mit dem Auftrag); die MISRA-Konformität steht in `documents/software/pi2/misra_konformitaet.md`.
+### Testfälle
+Zuordnung der Testfälle aus dem Designdokument zu den Tests. Alle Tests sind in der Simulation (TCP auf einem Linux-PC) bestanden; am Raspberry Pi stehen sie noch aus.
 
-### Noch offen
-*   **Sicherheitsabstände (30 / 50 / 80 cm) und PWM-Stufen** in `src/pi2_safety/pi2_config.h` sind vorläufig und müssen am realen Aufbau festgelegt werden (SAF-10).
+| Testfall | Unit-Test (`tests/`) | Durchlauf mit den Programmen |
+|---|---|---|
+| TC-01 Sensor ungültig | `test_pi2`: `test_p1_range`, `test_invalid_sensor` | `pi2_app_test`: `d <1\|2> 0` (kein Echo) oder Sensor verdecken |
+| TC-01a Messbereich (P1) | `test_pi2`: `test_p1_range` | `pi2_app_test`: `force <1\|2> 5000` |
+| TC-01b Sprung (P2) | `test_pi2`: `test_p2_rate` | `pi2_app_test`: `force <1\|2> <mm>` mit großem Sprung |
+| TC-02 Sensorabweichung (P3) | `test_pi2`: `test_cross_check`, `test_cross_check_single_update` | `pi2_app_test`: `force 2 1200` bei 1000 mm |
+| TC-03 Verbindungsverlust | `test_pi2`: `test_comm_timeout` | `pi1_app` mit `kill -9` beenden oder `pi1_sim.py`: `pause`; Reaktionszeit im Test-Log von Pi 2 |
+| TC-04 Datenalter (P4) | `test_pi2`: `test_stale_data` | `pi2_app_test`: `block 1 300` |
+| TC-05 Objekt im Sicherheitsabstand | `test_pi2`: `test_object_stop` | `pi2_app_test`: `d 1 400` und `d 2 400` |
+| TC-06 Programmende | `test_pi2`: `test_shutdown` | `pi1_app`: `q`, SIGINT oder SIGTERM; STOP, Motor AUS, ACK |
+| TC-07 Wiederanlauf | `test_pi2`: `test_comm_timeout`, `test_object_stop` | Objekt entfernen; `pi1_app` neu starten |
+| TC-08 Spoofing | `test_pi2`: `test_protocol`; `test_common` | gegen Pi 2: `pi1_sim.py` `corrupt`, `tamper`; gegen Pi 1: `mock_pi2` `badtag`, `badpayload` |
+| TC-09 Replay | `test_common` (Session) | gegen Pi 2: `pi1_sim.py` `replay`, `badsession`; gegen Pi 1: `mock_pi2` `replay`, `oldsession` |
+
+### Dokumentation
+Die Software-Dokumentation liegt in `documents/software/` (Einstieg: `documents/software/README.md`). Für Pi 2 beginnt sie mit `documents/software/pi2/ueberblick.md`. Offene Punkte und der Abgleich mit dem Auftrag stehen gesammelt in `documents/software/pi2/stand.md`, die MISRA-Konformität in `documents/software/pi2/misra_konformitaet.md`.
 
 ## Einsatz von Sprachmodellen
 
 | Teil | Werkzeug und Modell | Erstellt | Prüfung |
 |---|---|---|---|
-| `src/common/`, `src/pi2_safety/`, `tests/test_pi2.c`, `tools/pi1_sim.py`, Abschnitt Pi 2 in `CMakeLists.txt` | Claude Code mit Claude Fable 5.2 | Quellcode, Kommentare und Unit-Tests | Build ohne Warnungen, 216 Prüfungen in den Unit-Tests, Simulationslauf gegen `tools/pi1_sim.py`, cppcheck mit MISRA-Addon. Durchsicht durch ein Gruppenmitglied: offen (Platzhalter `<Name>` in jeder Datei). |
-| `documents/software/pi2/*.md`, Abschnitt Pi 2 in diesem README | Claude Code mit Claude Fable 5.2 | Text | Durchsicht durch ein Gruppenmitglied: offen. |
+| `src/pi2_safety/`, `tests/test_pi2.c`, `tools/pi1_sim.py`, Abschnitt Pi 2 in `CMakeLists.txt` | Claude Code mit Claude Fable 5.2 und Claude Opus 5.5 | Quellcode, Kommentare und Unit-Tests | Build ohne Warnungen, 216 Prüfungen in den Unit-Tests, Durchläufe gegen `pi1_app` und `tools/pi1_sim.py` (siehe Testfälle), cppcheck mit MISRA-Addon. Durchsicht durch ein Gruppenmitglied: offen (Platzhalter `<Name>` in jeder Datei). |
+| `documents/software/README.md`, `documents/software/pi2/*.md`, Abschnitt Pi 2 in diesem README | Claude Code mit Claude Fable 5.2 und Claude Opus 5.5 | Text | Durchsicht durch ein Gruppenmitglied: offen. |
 
 Auf dem Raspberry Pi wurde der Code noch nicht gebaut oder getestet.

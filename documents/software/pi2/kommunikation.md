@@ -55,7 +55,8 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
   sich das Programm ohne Bluetooth mit `tools/pi1_sim.py` testen lässt.
 - **Verwerfen oder Fehler?** Eine Nachricht mit falschem Tag, fremder Session-ID oder alter Sequenznummer
   stammt nicht nachweislich von Pi 1 und wird nur verworfen. Eine echte Nachricht mit ungültigem Inhalt führt
-  im nächsten Zyklus der Safety-Logik zu FEHLER / KOMMUNIKATION (Klarstellung 6 im Auftrag, Abschnitt 2.6).
+  im nächsten Zyklus der Safety-Logik zu FEHLER / KOMMUNIKATION, weil ein ungültiger Befehl laut
+  Designdokument (Abschnitt 2.6) ein Kommunikationsfehler ist.
   Der nächste gültige Heartbeat hebt den Fehler wieder auf. Ein gesetztes Stop-Flag bleibt erhalten.
 - **Die Sequenznummer wird nach bestandener Tag- und Session-Prüfung übernommen,** auch wenn der Inhalt
   danach ungültig ist. Dieselbe Nachricht kann so nicht noch einmal eingespielt werden.
@@ -63,7 +64,7 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
 - **Kein ACK ohne bestätigtes Motor AUS.** Kommt die Rückmeldung nicht innerhalb von 500 ms, wird kein ACK
   gesendet. Pi 1 wartet höchstens 2 Sekunden und protokolliert das Ausbleiben.
 - **Die Sequenznummer läuft nie über.** Ist 2³² − 1 erreicht, sendet Pi 2 nicht mehr und baut die Verbindung
-  ab. Nach dem Neuaufbau gibt es eine neue Session-ID, und die Zählung beginnt bei 1 (Designdokument 5.2).
+  ab. Nach dem Neuaufbau gibt es eine neue Session-ID, und die Zählung beginnt bei 1 (T2, Abschnitt 5.2).
 - **Kein Zustand „Verbindung OK“.** Der Thread schreibt nur den Zeitstempel. Bei Verbindungsverlust läuft
   der Timeout in der Safety-Logik ab (300 ms).
 
@@ -71,20 +72,19 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
 
 `src/common/crypto_utils.c` (von Pi 1) schützt die Nutzdaten mit AES-256-GCM über OpenSSL. `main_pi2.c` lädt
 beim Start den Schlüssel (`--key`, Standard `/etc/ssm/psk.bin`) und ruft `crypto_init()` auf. Fehlt der
-Schlüssel oder ist er ungültig, startet Pi 2 nicht. Die OpenSSL-Kontexte werden nur einmal angelegt; deshalb
+Schlüssel oder ist er ungültig, startet Pi 2 nicht (SEC-01). Die OpenSSL-Kontexte werden nur einmal angelegt; deshalb
 darf nur der Kommunikations-Thread `crypto_seal` und `crypto_open` aufrufen.
 
 ## Stellen, an denen man Fehler leicht übersieht
 
 - Ein zweiter Thread, der Kryptofunktionen aufruft, würde die gemeinsamen OpenSSL-Kontexte stören.
-- Der Überlauf der Sequenznummer ist nicht durch einen automatischen Test abgedeckt. Er wurde einmal mit
-  einem hochgesetzten Startwert nachgestellt.
-- Pi 1 sendet erst Heartbeats, wenn der Bediener eine Stufe gewählt hat. Bis dahin steht Pi 2 in
-  FEHLER / KOMMUNIKATION. Das ist beabsichtigt.
+- Die Sequenznummer wird auch bei einer echten Nachricht mit ungültigem Inhalt übernommen. Würde sie erst
+  nach der Inhaltsprüfung gespeichert, ließe sich diese Nachricht beliebig oft wiederholen.
 
 ## Tests
 
 `tests/test_pi2.c` prüft Roundtrip, Byte-Reihenfolge, jedes verfälschte Byte, falsche Längen und unbekannte
 Typen. Mit `tools/pi1_sim.py` lassen sich `pause`, `replay`, `corrupt`, `tamper`, `badsession`, `badlevel` und `stop` gegen ein
 laufendes Pi 2 ausführen (TC-03, TC-06, TC-08, TC-09). Erwartet: `replay`, `corrupt`, `tamper` und `badsession` ändern den Zustand
-nicht, `badlevel` führt kurz zu FEHLER / KOMMUNIKATION.
+nicht, `badlevel` führt kurz zu FEHLER / KOMMUNIKATION. Der Überlauf der Sequenznummer ist in
+`tests/test_common.c` getestet.

@@ -1,6 +1,6 @@
 # Pi 2 – Motorsteuerung und Hardware-Schicht (`motor.c`, `hal_*.c`)
 
-Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2), geprüft von: <Name>
+Erstellt mit Unterstützung eines Sprachmodells (Claude Code, Claude Fable 5.2 und Claude Opus 5.5), geprüft von: <Name>
 
 ## Aufgabe
 
@@ -47,7 +47,7 @@ Die Safety-Logik, die Sensorprüfungen und die Motorsteuerung sind in beiden Var
 ## Wichtige Entscheidungen
 
 - **Überwachung der Safety-Logik:** Aktualisiert die Safety-Logik ihren Zustand 150 ms lang nicht, schaltet
-  die Motorsteuerung von sich aus ab. Das steht nicht im Designdokument.
+  die Motorsteuerung von sich aus ab. Das ist eine Ergänzung zum Designdokument.
 - **Fehler beim Abschalten werden gezählt.** `hal_motor_off()` meldet, wenn ein Ausgang nicht gesetzt werden
   konnte. Die Motorsteuerung versucht es im nächsten Durchlauf erneut, das Hauptprogramm gibt den Fehler aus.
   Solange die Rückmeldung „unbekannt“ lautet, wird der Watchdog nicht bedient und setzt den Pi nach 1 s zurück.
@@ -60,24 +60,18 @@ Die Safety-Logik, die Sensorprüfungen und die Motorsteuerung sind in beiden Var
 
 ## Stellen, an denen man Fehler leicht übersieht
 
-- `hal_pigpio.c` wurde bisher nur gegen einen nachgebauten Header auf Syntax geprüft. Gebaut und getestet
-  werden muss die Datei am Raspberry Pi.
 - Motor AUS heißt nicht Stillstand. Der Rotor läuft nach (H4). Die Nachlaufzeit muss am Aufbau gemessen
   werden und bestimmt die Sicherheitsabstände (SAF-10). Dafür gibt es in `pi2_app_test` den Befehl
   `run <1|2|3> <s>`: Der Motor läuft für die gewählte Dauer mit der Stufe und wird dann abgeschaltet, der
   Zeitpunkt steht im Test-Log.
-- Die Tastverhältnisse und die Sicherheitsabstände in `pi2_config.h` sind vorläufig.
+- Die Tastverhältnisse und die Sicherheitsabstände in `pi2_config.h` sind vorläufig (SAF-10).
 - Hardware-PWM läuft unabhängig vom Prozess weiter. Endet der Prozess, ohne die Ausgänge zurückzusetzen,
   bliebe der Motor an. Dagegen wirkt nur der Hardware-Watchdog (siehe unten), und der ist mit
   `--no-watchdog` abgeschaltet.
-- Der Watchdog wurde am Raspberry Pi noch nicht getestet. Am Aufbau ist zu prüfen, dass der Pi nach
-  `kill -9` innerhalb von etwa einer Sekunde neu startet und der Motor stehen bleibt.
-- Der Auftrag `pi2_agent_prompt.md` verlangt libgpiod und PWM über sysfs statt pigpio. Betroffen wäre nur
-  eine neue Datei neben `hal_pigpio.c`.
 
 ## Hardware-Watchdog (`watchdog.c`)
 
-Der Watchdog ist eine Ergänzung zum Designdokument. Er verwendet `/dev/watchdog` (Treiber `bcm2835_wdt`)
+Der Watchdog ist eine Ergänzung zum Designdokument (gegen H4 bei einem Absturz der Software). Er verwendet `/dev/watchdog` (Treiber `bcm2835_wdt`)
 mit einem Timeout von 1 Sekunde und ist unabhängig von pigpio.
 
 | Schritt | Verhalten |
