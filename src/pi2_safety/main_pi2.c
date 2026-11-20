@@ -2,8 +2,9 @@
  * main_pi2.c - Raspberry Pi 2: Sensorerfassung, Safety-Logik, Motorsteuerung.
  *
  * Aufruf:
- *   pi2_app [--tcp PORT] [--no-watchdog]
+ *   pi2_app [--tcp PORT] [--key PFAD] [--no-watchdog]
  *     --tcp PORT     TCP auf 127.0.0.1 statt Bluetooth-RFCOMM (Entwicklung)
+ *     --key PFAD     Schluesseldatei (Standard /etc/ssm/psk.bin)
  *     --no-watchdog  Hardware-Watchdog nicht verwenden (nur Entwicklung)
  *
  * Testmodus: Wird mit SSM_TESTMODE gebaut (Ziel pi2_app_test), nimmt das
@@ -64,6 +65,7 @@ typedef struct {
 
 typedef struct {
     bt_server_cfg_t comm;
+    const char_t *key_path;
     bool use_watchdog;
 } options_t;
 
@@ -268,12 +270,17 @@ static bool parse_options(int32_t argc, char_t *const argv[], options_t *options
 
     options->comm.use_tcp = false;
     options->comm.tcp_port = 0U;
+    options->key_path = CFG_PSK_DEFAULT_PATH;
     options->use_watchdog = true;
 
     while (ok && (a < argc)) {
         if ((strcmp(argv[a], "--tcp") == 0) && ((a + 1) < argc)) {
             ok = parse_port(argv[a + 1], &options->comm.tcp_port);
             options->comm.use_tcp = ok;
+            a += 2;
+        } else if ((strcmp(argv[a], "--key") == 0) && ((a + 1) < argc) &&
+                   (argv[a + 1][0] != '\0')) {
+            options->key_path = argv[a + 1];
             a += 2;
         } else if (strcmp(argv[a], "--no-watchdog") == 0) {
             options->use_watchdog = false;
@@ -338,7 +345,7 @@ int main(int argc, char **argv)
     size_t i;
 
     if (!parse_options(argc, argv, &options)) {
-        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--no-watchdog]\n", argv[0]);
+        (void)fprintf(stderr, "Aufruf: %s [--tcp PORT] [--key PFAD] [--no-watchdog]\n", argv[0]);
         return EXIT_FAILURE;
     }
     /* SAF-07: Die Sicherheitsabstaende muessen mit der Stufe wachsen. */
@@ -359,10 +366,10 @@ int main(int argc, char **argv)
      * Schluessel wird nicht gestartet; die Ausgaenge bleiben unberuehrt. */
     {
         uint8_t key[CRYPTO_KEY_LEN];
-        int32_t key_rc = crypto_load_key_file(CFG_PSK_DEFAULT_PATH, key);
+        int32_t key_rc = crypto_load_key_file(options.key_path, key);
 
         if ((key_rc != CRYPTO_KEY_OK) || (crypto_init(key) != 0)) {
-            (void)fprintf(stderr, "Fehler: %s (%s)\n", CFG_PSK_DEFAULT_PATH,
+            (void)fprintf(stderr, "Fehler: %s (%s)\n", options.key_path,
                           (key_rc != CRYPTO_KEY_OK) ? crypto_key_error_text(key_rc)
                                                     : "OpenSSL-Initialisierung fehlgeschlagen");
             crypto_wipe(key, sizeof(key));

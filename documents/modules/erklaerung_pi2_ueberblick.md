@@ -121,7 +121,7 @@ Speicherverwaltung.
 | 11 | Fehlende Rechte führen zum Abbruch; Zyklusüberschreitungen zählen (Ergänzung 14) | umgesetzt; in der Simulation bleibt es bei einer Warnung | erledigt |
 | 12 | S = 30 / 50 / 80 cm, Prüfung der Reihenfolge beim Start (Ergänzung 9) | umgesetzt in `pi2_config.h` und `safety_config_valid()` | erledigt |
 | 13 | Gemeinsamer Startzeitpunkt der Sensor-Threads (Ergänzung 3) | umgesetzt (`sensors_set_start_time()`), Echo-Timeout 25 ms | erledigt |
-| 14 | AES-256-GCM über OpenSSL | CRC-Platzhalter in `crypto_utils.c` | offen bis `common/` von Pi 1 |
+| 14 | AES-256-GCM über OpenSSL | umgesetzt von Pi 1 in `crypto_utils.c`, Schlüssel wird in `main_pi2.c` geladen | erledigt |
 | 15 | Simulierter Pi 1 in C mit `common/` | `tools/pi1_sim.py` | Werkzeug |
 | 16 | `-Werror`, Abweichungen im README | `-Werror` gesetzt; Liste der Abweichungen in `documents/misra_konformitaet_pi2.md` statt im README | teilweise |
 | 17 | MISRA: Kategorie Mandatory | geprüft werden die neun Regeln aus `MISRA_C_verpflichtende_Regeln.pdf` (Festlegung der Gruppe) | entschieden |

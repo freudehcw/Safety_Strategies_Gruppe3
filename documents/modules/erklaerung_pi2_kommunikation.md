@@ -56,26 +56,24 @@ Alle Felder werden einzeln in Big-Endian-Reihenfolge geschrieben, nie als `struc
 - **Kein Zustand „Verbindung OK“.** Der Thread schreibt nur den Zeitstempel. Bei Verbindungsverlust läuft
   der Timeout in der Safety-Logik ab (300 ms).
 
-## Krypto-Platzhalter
+## Kryptografie
 
-`src/common/crypto_utils.c` verschlüsselt nicht. Ins Tag-Feld kommt eine CRC-32 über AAD, Nonce und
-Nutzdaten. Das erkennt Übertragungsfehler, schützt aber nicht vor einem Angreifer. Die Schnittstelle
-(`crypto_seal`, `crypto_open`) entspricht bereits AES-256-GCM. Laut Auftrag liefert Pi 1 die echte
-Umsetzung mit OpenSSL in `common/`.
+`src/common/crypto_utils.c` (von Pi 1) schützt die Nutzdaten mit AES-256-GCM über OpenSSL. `main_pi2.c` lädt
+beim Start den Schlüssel (`--key`, Standard `/etc/ssm/psk.bin`) und ruft `crypto_init()` auf. Fehlt der
+Schlüssel oder ist er ungültig, startet Pi 2 nicht. Die OpenSSL-Kontexte werden nur einmal angelegt; deshalb
+darf nur der Kommunikations-Thread `crypto_seal` und `crypto_open` aufrufen.
 
 ## Stellen, an denen man Fehler leicht übersieht
 
-- Mit dem Platzhalter kann Pi 2 nicht mit einem Pi 1 sprechen, der schon AES-256-GCM verwendet.
+- Ein zweiter Thread, der Kryptofunktionen aufruft, würde die gemeinsamen OpenSSL-Kontexte stören.
 - Der Überlauf der Sequenznummer ist nicht durch einen automatischen Test abgedeckt. Er wurde einmal mit
   einem hochgesetzten Startwert nachgestellt.
-- Solange der CRC-Platzhalter verwendet wird, ist „echte Nachricht“ nur so gut wie die CRC. Die
-  Unterscheidung zwischen Verwerfen und Fehler wird erst mit AES-256-GCM belastbar.
 - Pi 1 sendet erst Heartbeats, wenn der Bediener eine Stufe gewählt hat. Bis dahin steht Pi 2 in
   FEHLER / KOMMUNIKATION. Das ist beabsichtigt.
 
 ## Tests
 
 `tests/test_pi2.c` prüft Roundtrip, Byte-Reihenfolge, jedes verfälschte Byte, falsche Längen und unbekannte
-Typen. Mit `tools/pi1_sim.py` lassen sich `pause`, `replay`, `corrupt`, `badlevel` und `stop` gegen ein
-laufendes Pi 2 ausführen (TC-03, TC-06, TC-08, TC-09). Erwartet: `replay` und `corrupt` ändern den Zustand
+Typen. Mit `tools/pi1_sim.py` lassen sich `pause`, `replay`, `corrupt`, `tamper`, `badsession`, `badlevel` und `stop` gegen ein
+laufendes Pi 2 ausführen (TC-03, TC-06, TC-08, TC-09). Erwartet: `replay`, `corrupt`, `tamper` und `badsession` ändern den Zustand
 nicht, `badlevel` führt kurz zu FEHLER / KOMMUNIKATION.

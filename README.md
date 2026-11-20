@@ -66,9 +66,10 @@ CMake wählt die HAL automatisch: Ist `pigpio` installiert (Raspberry Pi, Paket 
 
 ### Starten
 ```Bash
-sudo ./pi2_app              # Raspberry Pi: Bluetooth-RFCOMM, Kanal 1 (root für pigpio, SCHED_FIFO, Watchdog)
-./pi2_app --tcp 5555        # Entwicklung: TCP auf localhost statt Bluetooth
+sudo ./pi2_app                          # Raspberry Pi: Bluetooth-RFCOMM, Kanal 1, Schlüssel /etc/ssm/psk.bin
+./pi2_app --tcp 5555 --key psk.bin      # Entwicklung: TCP auf localhost, Schlüssel aus eigener Datei
 ```
+Ohne gültigen Schlüssel (32 Byte, Rechte höchstens 0600) startet `pi2_app` nicht. Einen Testschlüssel erzeugt `tools/gen_psk.sh psk.bin`.
 Auf dem Raspberry Pi startet das Programm nur mit Root-Rechten, verfügbarem Watchdog und `SCHED_FIFO`. Ohne Echo bleibt das System in FEHLER / SENSOR; im Messbereich (bis 4 m) muss deshalb eine Rückwand stehen.
 
 ### Testmodus
@@ -92,10 +93,15 @@ Die Hardware-PWM läuft unabhängig vom Prozess weiter. Damit der Motor bei eine
 *   `--no-watchdog` schaltet ihn für die Entwicklung ab. In der Simulation ist er nie aktiv.
 
 ### Ohne Pi 1 testen
-`tools/pi1_sim.py` simuliert Pi 1 (Heartbeat, Stufenwahl, Stop, fehlerhafte Nachrichten):
+Gegen den echten Pi 1 auf demselben Rechner:
 ```Bash
-./pi2_app_test --tcp 5555            # Terminal 1
-../tools/pi1_sim.py --tcp 5555       # Terminal 2: low | medium | high | pause | resume | stop ...
+../tools/gen_psk.sh psk.bin                                              # einmalig
+./pi2_app_test --tcp 5555 --key psk.bin                                  # Terminal 1
+./pi1_app --tcp --tcp-port 5555 --key psk.bin --lcd-console              # Terminal 2: 1/2/3, q
+```
+Für die Angriffstests (TC-08, TC-09) erzeugt `tools/pi1_sim.py` gezielt fehlerhafte Nachrichten. Er verwendet AES-256-GCM über das Python-Paket `cryptography` (`pip install cryptography` bzw. `python3-cryptography`):
+```Bash
+../tools/pi1_sim.py --tcp 5555 --key psk.bin   # low | medium | high | pause | resume | corrupt | tamper | badsession | replay | badlevel | stop
 ```
 
 ### Unit-Tests
@@ -108,7 +114,6 @@ make -j4 && ctest --output-on-failure
 Erklärungen zu den Modulen von Pi 2 (Aufgabe, Ablauf, Entscheidungen, typische Fehlerquellen) liegen in `documents/modules/`, beginnend mit `documents/modules/erklaerung_pi2_ueberblick.md`. Dort steht auch der Abgleich mit dem Auftrag `pi2_agent_prompt.md`. Die MISRA-Konformität ist in `documents/misra_konformitaet_pi2.md` beschrieben.
 
 ### Noch offen
-*   **Security:** `src/common/crypto_utils.c` ist ein Platzhalter (CRC statt AES-256-GCM, keine Verschlüsselung). Das Frame-Format ist bereits final.
 *   **Sicherheitsabstände (30 / 50 / 80 cm) und PWM-Stufen** in `src/pi2_safety/pi2_config.h` sind vorläufig und müssen am realen Aufbau festgelegt werden (SAF-10).
 
 ## Einsatz von Sprachmodellen
